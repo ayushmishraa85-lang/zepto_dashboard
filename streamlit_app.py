@@ -1,5 +1,5 @@
 """
-Zepto Sales Intelligence Dashboard — Streamlit Edition
+Ayush Intelligence Hub — Streamlit Edition
 Deploy FREE at: https://streamlit.io/cloud
 Developed by Ayush Mishra
 """
@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore")
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Zepto Sales Intelligence Dashboard",
+    page_title="Ayush Intelligence Hub",
     page_icon="🛒",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -169,8 +169,8 @@ Britannia Cake,Snacks,Delhi,148,163,5,283,44714,No"""
 with st.sidebar:
     st.markdown("""
     <div style="text-align:center;padding:12px 0 20px">
-      <div style="width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">Z</div>
-      <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Zepto Intelligence</div>
+      <div style="width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">N</div>
+      <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">NovaMS</div>
       <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v2.0</div>
     </div>
     """, unsafe_allow_html=True)
@@ -230,7 +230,7 @@ if search:             df = df[df["Product Name"].str.contains(search, case=Fals
 st.markdown("""
 <div style="background:linear-gradient(135deg,#0d1628,#121d35);border:1px solid rgba(99,130,255,.12);border-radius:16px;padding:20px 24px;margin-bottom:20px">
   <h1 style="margin:0;font-size:22px;font-weight:700;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
-    Zepto Sales Intelligence Dashboard
+   Ayush Intelligence Hub
   </h1>
   <p style="margin:4px 0 0;font-size:12px;color:#4a5a7a">
     Real-Time Business Insights · Statistical Analytics · ML Forecasting · Developed by Ayush Mishra
@@ -575,7 +575,7 @@ if show_raw:
 # ── Footer ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="footer">
-  Zepto Sales Intelligence Dashboard v2.0 &nbsp;·&nbsp;
+Ayush Intelligence Hub&nbsp;·&nbsp;
   Developed by <span class="dev">Ayush Mishra</span> &nbsp;·&nbsp;
   FastAPI · Pandas · SciPy · scikit-learn · Streamlit · Plotly
 </div>
