@@ -1,5 +1,5 @@
 """
-Ayush Intelligence Hub— Streamlit Edition
+Zepto Sales Intelligence Dashboard — Streamlit Edition
 Deploy FREE at: https://streamlit.io/cloud
 Developed by Ayush Mishra
 """
@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore")
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Ayush Intelligence Hub",
+    page_title="Zepto Sales Intelligence Dashboard",
     page_icon="🛒",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -84,13 +84,6 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 div[data-testid="metric-container"] { background: #0d1628; border: 1px solid rgba(99,130,255,.12); border-radius: 12px; padding: 12px; }
 .stSelectbox > div > div { background: #0d1628; border-color: rgba(99,130,255,.2); }
 .stTextInput > div > div { background: #0d1628; }
-
-[data-testid="stToolbarActions"] {display: none !important;}
-button[data-testid="baseButton-header"] {display: none !important;}
-.st-emotion-cache-zq5wmm {display: none !important;}
-.st-emotion-cache-1dp5vir {display: none !important;}
-iframe[title="streamlit_analytics"] {display: none !important;}
-div[data-testid="stToolbar"] {display: none !important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -176,9 +169,9 @@ Britannia Cake,Snacks,Delhi,148,163,5,283,44714,No"""
 with st.sidebar:
     st.markdown("""
     <div style="text-align:center;padding:12px 0 20px">
-      <div style="width:44px;height:44px;background:linear-gradient(135deg,#f7971e,#ffd200);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">N</div>
-      <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Nova-MS</div>
-      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard 2.0</div>
+      <div style="width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">Z</div>
+      <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Zepto Intelligence</div>
+      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v2.0</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -237,7 +230,7 @@ if search:             df = df[df["Product Name"].str.contains(search, case=Fals
 st.markdown("""
 <div style="background:linear-gradient(135deg,#0d1628,#121d35);border:1px solid rgba(99,130,255,.12);border-radius:16px;padding:20px 24px;margin-bottom:20px">
   <h1 style="margin:0;font-size:22px;font-weight:700;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
-    Ayush Intelligence Hub
+    Zepto Sales Intelligence Dashboard
   </h1>
   <p style="margin:4px 0 0;font-size:12px;color:#4a5a7a">
     Real-Time Business Insights · Statistical Analytics · ML Forecasting · Developed by Ayush Mishra
@@ -318,8 +311,8 @@ with col1:
                  title="Top 10 Products by Revenue",
                  color="Total Revenue", color_continuous_scale=["#6366f1","#06b6d4","#10b981"])
     fig.update_layout(**PLOTLY_LAYOUT, title_font_color="#f0f4ff",
+                      yaxis=dict(autorange="reversed", gridcolor="rgba(99,130,255,.06)"),
                       coloraxis_showscale=False)
-    fig.update_yaxes(autorange="reversed", gridcolor="rgba(99,130,255,.06)")
     fig.update_xaxes(tickformat=",.0f", tickprefix="₹")
     st.plotly_chart(fig, use_container_width=True)
 
@@ -582,7 +575,7 @@ if show_raw:
 # ── Footer ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="footer">
- Ayush Intelligence Hub&nbsp;·&nbsp;
+  Zepto Sales Intelligence Dashboard v2.0 &nbsp;·&nbsp;
   Developed by <span class="dev">Ayush Mishra</span> &nbsp;·&nbsp;
   FastAPI · Pandas · SciPy · scikit-learn · Streamlit · Plotly
 </div>
