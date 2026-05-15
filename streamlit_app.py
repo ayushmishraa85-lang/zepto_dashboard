@@ -30,6 +30,7 @@ st.markdown("""
 [data-testid="stDeployButton"] {visibility: hidden;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
+[data-testid="collapsedControl"] {display: block !important; visibility: visible !important;}
 </style>
 """, unsafe_allow_html=True)
 
