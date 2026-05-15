@@ -16,7 +16,15 @@ import warnings, io, os
 warnings.filterwarnings("ignore")
 
 # ── Page config ────────────────────────────────────────────────────────────────
-st.set_page_config(
+st.set_page_config( st.markdown("""
+<style>
+[data-testid="stToolbar"] {visibility: hidden;}
+[data-testid="stDecoration"] {visibility: hidden;}
+[data-testid="stDeployButton"] {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
     page_title="Zepto Sales Intelligence Dashboard",
     page_icon="🛒",
     layout="wide",
