@@ -171,7 +171,7 @@ with st.sidebar:
     <div style="text-align:center;padding:12px 0 20px">
       <div style="width:44px;height:44px;background:linear-gradient(135deg,#f7971e,#ffd200);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">N</div>
       <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Nova-MS</div>
-      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v2.0</div>
+      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard 2.0</div>
     </div>
     """, unsafe_allow_html=True)
 
