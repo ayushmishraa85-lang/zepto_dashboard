@@ -311,8 +311,8 @@ with col1:
                  title="Top 10 Products by Revenue",
                  color="Total Revenue", color_continuous_scale=["#6366f1","#06b6d4","#10b981"])
     fig.update_layout(**PLOTLY_LAYOUT, title_font_color="#f0f4ff",
-                      yaxis=dict(autorange="reversed", gridcolor="rgba(99,130,255,.06)"),
                       coloraxis_showscale=False)
+    fig.update_yaxes(autorange="reversed", gridcolor="rgba(99,130,255,.06)")
     fig.update_xaxes(tickformat=",.0f", tickprefix="₹")
     st.plotly_chart(fig, use_container_width=True)
 
