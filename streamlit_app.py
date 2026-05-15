@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore")
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Zepto Sales Intelligence Dashboard",
+    page_title="Ayush Intelligence Hub",
     page_icon="🛒",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -584,7 +584,7 @@ if show_raw:
 # ── Footer ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="footer">
-  Zepto Sales Intelligence Dashboard v2.0 &nbsp;·&nbsp;
+  Ayush Intelligence Hub&nbsp;·&nbsp;
   Developed by <span class="dev">Ayush Mishra</span> &nbsp;·&nbsp;
   FastAPI · Pandas · SciPy · scikit-learn · Streamlit · Plotly
 </div>
@@ -593,5 +593,5 @@ st.markdown("""
 # ── Auto refresh ─────────────────────────────────────────────────────────────────
 if auto_refresh:
     import time
-    time.sleep(30)
+    time.sleep(5)
     st.rerun()
