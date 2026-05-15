@@ -1,5 +1,5 @@
 """
-Zepto Sales Intelligence Dashboard — Streamlit Edition
+Ayush Intelligence Hub — Streamlit Edition
 Deploy FREE at: https://streamlit.io/cloud
 Developed by Ayush Mishra
 """
@@ -240,7 +240,7 @@ if search:             df = df[df["Product Name"].str.contains(search, case=Fals
 st.markdown("""
 <div style="background:linear-gradient(135deg,#0d1628,#121d35);border:1px solid rgba(99,130,255,.12);border-radius:16px;padding:20px 24px;margin-bottom:20px">
   <h1 style="margin:0;font-size:22px;font-weight:700;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
-    Zepto Sales Intelligence Dashboard
+    Ayush Intelligence Hub
   </h1>
   <p style="margin:4px 0 0;font-size:12px;color:#4a5a7a">
     Real-Time Business Insights · Statistical Analytics · ML Forecasting · Developed by Ayush Mishra
@@ -579,7 +579,7 @@ if show_raw:
     st.dataframe(show_df, use_container_width=True, height=350)
 
     csv_out = df.to_csv(index=False)
-    st.download_button("⬇ Download Filtered CSV", csv_out, "zepto_filtered.csv", "text/csv")
+    st.download_button("⬇ Download Filtered CSV", csv_out, "Ayush_filtered.csv", "text/csv")
 
 # ── Footer ──────────────────────────────────────────────────────────────────────
 st.markdown("""
