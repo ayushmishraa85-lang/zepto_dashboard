@@ -175,6 +175,10 @@ Nestle Munch,Confectionery,Mumbai,195,205,0,223,45715,No
 Britannia Cake,Snacks,Delhi,148,163,5,283,44714,No"""
     return clean(pd.read_csv(io.StringIO(csv)))
 
+# ── Sidebar toggle ──
+with st.sidebar:
+    pass
+
 # ── Sidebar ─────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
