@@ -84,6 +84,13 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 div[data-testid="metric-container"] { background: #0d1628; border: 1px solid rgba(99,130,255,.12); border-radius: 12px; padding: 12px; }
 .stSelectbox > div > div { background: #0d1628; border-color: rgba(99,130,255,.2); }
 .stTextInput > div > div { background: #0d1628; }
+
+[data-testid="stToolbarActions"] {display: none !important;}
+button[data-testid="baseButton-header"] {display: none !important;}
+.st-emotion-cache-zq5wmm {display: none !important;}
+.st-emotion-cache-1dp5vir {display: none !important;}
+iframe[title="streamlit_analytics"] {display: none !important;}
+div[data-testid="stToolbar"] {display: none !important;}
 </style>
 """, unsafe_allow_html=True)
 
