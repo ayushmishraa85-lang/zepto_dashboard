@@ -32,6 +32,7 @@ st.markdown("""
 [data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
+[data-testid="collapsedControl"] {display: block !important; visibility: visible !important;}
 #MainMenu {visibility: hidden;}
 [data-testid="collapsedControl"] {
     display: flex !important;
