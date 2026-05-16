@@ -1362,7 +1362,7 @@ if question_to_answer:
 
 # Clear chat button
 if len(st.session_state.blinkbot_history) > 1:
-    if st.button("🗑️ Clear Chat", type="secondary"):
+    if st.button("🗑️ Clear Chat", type="secondary", key="clear_chat_btn"):
         st.session_state.blinkbot_history = []
         st.rerun()
 
