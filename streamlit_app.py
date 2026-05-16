@@ -1329,7 +1329,7 @@ quick_questions = {
     "📍 City Analysis":      "Which city is performing worst?",
     "⚡ Influencer Impact":  "How is influencer marketing performing?",
 }
-   clicked_quick = None
+clicked_quick = None
 quick_items = list(quick_questions.items())
 with qcol1:
     if st.button(quick_items[0][0], key="qbtn_0", use_container_width=True):
