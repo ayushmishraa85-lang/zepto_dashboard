@@ -1329,8 +1329,6 @@ quick_questions = {
     "📍 City Analysis":      "Which city is performing worst?",
     "⚡ Influencer Impact":  "How is influencer marketing performing?",
 }
-clicked_quick = None
-for i, (col, (label, question)) in enumerate(zip([qcol1, qcol2, qcol3, qcol4], quick_questions.items())):
     with col:
         if st.button(label, key=f"quick_btn_{i}", use_container_width=True):
             clicked_quick = question
@@ -1737,8 +1735,6 @@ quick_questions = {
     "📍 City Analysis":      "Which city is performing worst?",
     "⚡ Influencer Impact":  "How is influencer marketing performing?",
 }
-clicked_quick = None
-for i, (col, (label, question)) in enumerate(zip([qcol1, qcol2, qcol3, qcol4], quick_questions.items())):
     with col:
         if st.button(label, key=f"quick_btn_{i}", use_container_width=True):
             clicked_quick = question
