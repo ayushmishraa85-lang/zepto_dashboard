@@ -208,7 +208,7 @@ with st.sidebar:
     uploaded = st.file_uploader("Upload your CSV", type=["csv"], help="Replace the default dataset")
 
     st.markdown("---")
-    st.markdown("#### 🔍 Filters")N
+    st.markdown("#### 🔍 Filters")
     df_raw = load_default()
     if uploaded:
         try:
