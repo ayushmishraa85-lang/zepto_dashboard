@@ -1744,7 +1744,7 @@ for col, (label, question) in zip([qcol1, qcol2, qcol3, qcol4], quick_questions.
             clicked_quick = question
 
 # Text input
-with st.form(key="blinkbot_form", clear_on_submit=True):
+with st.form(key="blinkbot_form_1", clear_on_submit=True):
     fcol1, fcol2 = st.columns([5, 1])
     with fcol1:
         user_input = st.text_input(
