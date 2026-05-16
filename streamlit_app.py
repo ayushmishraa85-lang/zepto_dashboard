@@ -1740,7 +1740,7 @@ quick_questions = {
 clicked_quick = None
 for col, (label, question) in zip([qcol1, qcol2, qcol3, qcol4], quick_questions.items()):
     with col:
-        if st.button(label, use_container_width=True):
+        if st.button(label, use_container_width=True,key=f"btn_{label}"):
             clicked_quick = question
 
 # Text input
