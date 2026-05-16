@@ -1329,10 +1329,20 @@ quick_questions = {
     "📍 City Analysis":      "Which city is performing worst?",
     "⚡ Influencer Impact":  "How is influencer marketing performing?",
 }
-    with col:
-        if st.button(label, key=f"quick_btn_{i}", use_container_width=True):
-            clicked_quick = question
-
+   clicked_quick = None
+quick_items = list(quick_questions.items())
+with qcol1:
+    if st.button(quick_items[0][0], key="qbtn_0", use_container_width=True):
+        clicked_quick = quick_items[0][1]
+with qcol2:
+    if st.button(quick_items[1][0], key="qbtn_1", use_container_width=True):
+        clicked_quick = quick_items[1][1]
+with qcol3:
+    if st.button(quick_items[2][0], key="qbtn_2", use_container_width=True):
+        clicked_quick = quick_items[2][1]
+with qcol4:
+    if st.button(quick_items[3][0], key="qbtn_3", use_container_width=True):
+        clicked_quick = quick_items[3][1]
 # Text input
 with st.form(key="blinkbot_form", clear_on_submit=True):
     fcol1, fcol2 = st.columns([5, 1])
