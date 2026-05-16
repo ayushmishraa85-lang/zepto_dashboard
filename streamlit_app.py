@@ -29,7 +29,6 @@ st.markdown("""
 [data-testid="stToolbar"] {visibility: hidden;}
 [data-testid="stDecoration"] {visibility: hidden;}
 [data-testid="stDeployButton"] {visibility: hidden;}
-[data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
