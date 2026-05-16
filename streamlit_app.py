@@ -1,5 +1,5 @@
 """
-Ayush Intelligence Hub — Streamlit Edition
+Zepto Sales Intelligence Dashboard — Streamlit Edition
 Deploy FREE at: https://streamlit.io/cloud
 Developed by Ayush Mishra
 """
@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore")
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Ayush Intelligence Hub",
+    page_title="Zepto Sales Intelligence Dashboard",
     page_icon="🛒",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -32,7 +32,6 @@ st.markdown("""
 [data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
-[data-testid="collapsedControl"] {display: block !important; visibility: visible !important;}
 #MainMenu {visibility: hidden;}
 [data-testid="collapsedControl"] {
     display: flex !important;
@@ -198,8 +197,8 @@ Britannia Cake,Snacks,Delhi,148,163,5,283,44714,No"""
 with st.sidebar:
     st.markdown("""
     <div style="text-align:center;padding:12px 0 20px">
-      <div style="width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">N</div>
-      <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Nova_MS</div>
+      <div style="width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">Z</div>
+      <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Zepto Intelligence</div>
       <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v2.0</div>
     </div>
     """, unsafe_allow_html=True)
@@ -210,6 +209,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### 🔍 Filters")
+
     df_raw = load_default()
     if uploaded:
         try:
@@ -258,7 +258,7 @@ if search:             df = df[df["Product Name"].str.contains(search, case=Fals
 st.markdown("""
 <div style="background:linear-gradient(135deg,#0d1628,#121d35);border:1px solid rgba(99,130,255,.12);border-radius:16px;padding:20px 24px;margin-bottom:20px">
   <h1 style="margin:0;font-size:22px;font-weight:700;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
-    Ayush Intelligence Hub
+    Zepto Sales Intelligence Dashboard
   </h1>
   <p style="margin:4px 0 0;font-size:12px;color:#4a5a7a">
     Real-Time Business Insights · Statistical Analytics · ML Forecasting · Developed by Ayush Mishra
@@ -1362,7 +1362,7 @@ if question_to_answer:
 
 # Clear chat button
 if len(st.session_state.blinkbot_history) > 1:
-    if st.button("🗑️ Clear Chat", type="secondary", key="clear_chat_btn"):
+    if st.button("🗑️ Clear Chat", type="secondary"):
         st.session_state.blinkbot_history = []
         st.rerun()
 
@@ -1740,11 +1740,11 @@ quick_questions = {
 clicked_quick = None
 for col, (label, question) in zip([qcol1, qcol2, qcol3, qcol4], quick_questions.items()):
     with col:
-        if st.button(label, use_container_width=True,key=f"btn_{label}"):
+        if st.button(label, use_container_width=True):
             clicked_quick = question
 
 # Text input
-with st.form(key="blinkbot_form_1", clear_on_submit=True):
+with st.form(key="blinkbot_form", clear_on_submit=True):
     fcol1, fcol2 = st.columns([5, 1])
     with fcol1:
         user_input = st.text_input(
@@ -1789,7 +1789,7 @@ if show_raw:
 # ── Footer ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="footer">
-  Ayush Intelligence Hub &nbsp;·&nbsp;
+  Zepto Sales Intelligence Dashboard v2.0 &nbsp;·&nbsp;
   Developed by <span class="dev">Ayush Mishra</span> &nbsp;·&nbsp;
   FastAPI · Pandas · SciPy · scikit-learn · Streamlit · Plotly
 </div>
