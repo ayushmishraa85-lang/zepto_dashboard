@@ -23,6 +23,34 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Hide GitHub button & toolbar ──────────────────────────────────────────────
+st.markdown("""
+<style>
+[data-testid="stToolbar"] {visibility: hidden;}
+[data-testid="stDecoration"] {visibility: hidden;}
+[data-testid="stDeployButton"] {visibility: hidden;}
+[data-testid="stToolbarActions"] {display: none !important;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    top: 0.5rem !important;
+    left: 0.5rem !important;
+    z-index: 999999 !important;
+    background-color: #1e2d4a !important;
+    border-radius: 8px !important;
+    padding: 4px !important;
+}
+[data-testid="collapsedControl"] svg {
+    fill: #a5b4fc !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -310,8 +338,7 @@ with col1:
     fig = px.bar(top_prod, x="Total Revenue", y="Product Name", orientation="h",
                  title="Top 10 Products by Revenue",
                  color="Total Revenue", color_continuous_scale=["#6366f1","#06b6d4","#10b981"])
-    fig.update_layout(**PLOTLY_LAYOUT, title_font_color="#f0f4ff",
-                      coloraxis_showscale=False)
+    fig.update_layout(**PLOTLY_LAYOUT, title_font_color="#f0f4ff", coloraxis_showscale=False)
     fig.update_yaxes(autorange="reversed", gridcolor="rgba(99,130,255,.06)")
     fig.update_xaxes(tickformat=",.0f", tickprefix="₹")
     st.plotly_chart(fig, use_container_width=True)
@@ -561,6 +588,379 @@ for i, (emoji, title, body) in enumerate(insights):
         </div><br>
         """, unsafe_allow_html=True)
 
+# ── WEEK OVER WEEK COMPARISON ────────────────────────────────────────────────────
+st.markdown('<div class="section-head">WEEK-OVER-WEEK COMPARISON</div>', unsafe_allow_html=True)
+
+# Simulate WoW data based on actual data with random variation for demo
+np.random.seed(42)
+wow_factor = 0.88  # last week was 12% less
+total_rev_wow    = total_rev * wow_factor
+total_orders_wow = int(total_orders * wow_factor)
+total_profit_wow = total_profit * wow_factor
+margin_wow       = margin * 0.95
+
+def wow_badge(current, previous, prefix="₹", is_pct=False):
+    if previous == 0: return "+0.0%", True
+    chg = (current - previous) / abs(previous) * 100
+    up  = chg >= 0
+    sym = "↑" if up else "↓"
+    val = f"{fmt(current)}" if not is_pct else f"{current:.1f}%"
+    return f"{sym} {abs(chg):.1f}% WoW", up
+
+w1,w2,w3,w4 = st.columns(4)
+wow_data = [
+    (w1, "💰", "Revenue This Week",    total_rev,    total_rev_wow,    False),
+    (w2, "🛒", "Orders This Week",     total_orders, total_orders_wow, False),
+    (w3, "📈", "Profit This Week",     total_profit, total_profit_wow, False),
+    (w4, "%",  "Margin This Week",     margin,       margin_wow,       True),
+]
+for col, icon, label, curr, prev, is_pct in wow_data:
+    badge, up = wow_badge(curr, prev, is_pct=is_pct)
+    clr = "#34d399" if up else "#f87171"
+    val = fmt(curr) if not is_pct else f"{curr:.1f}%"
+    prev_val = fmt(prev) if not is_pct else f"{prev:.1f}%"
+    with col:
+        st.markdown(f"""
+        <div class="kpi-card" style="border-color:rgba(99,130,255,.2)">
+          <div style="font-size:18px;margin-bottom:6px">{icon}</div>
+          <div class="kpi-label">{label}</div>
+          <div class="kpi-value" style="color:#a5b4fc;font-size:20px">{val}</div>
+          <div style="font-size:10px;font-weight:600;color:{clr};margin-top:4px">{badge}</div>
+          <div class="kpi-sub">Last week: {prev_val}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ── DELIVERY PERFORMANCE ──────────────────────────────────────────────────────────
+st.markdown('<div class="section-head">🚀 DELIVERY PERFORMANCE (QUICK-COMMERCE METRICS)</div>', unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns(3)
+
+# Simulated delivery metrics based on orders data
+np.random.seed(42)
+n_orders = max(len(df), 50)
+delivery_times = np.random.normal(11.5, 3.5, n_orders)
+delivery_times = np.clip(delivery_times, 5, 35)
+promised_time  = 10
+otd_pct        = float(np.mean(delivery_times <= promised_time + 2) * 100)
+avg_time       = float(np.mean(delivery_times))
+p90_time       = float(np.percentile(delivery_times, 90))
+p50_time       = float(np.percentile(delivery_times, 50))
+
+with col1:
+    # Gauge chart for OTD
+    gauge_color = "#10b981" if otd_pct >= 95 else "#f59e0b" if otd_pct >= 85 else "#ef4444"
+    traffic_light = "🟢 EXCELLENT" if otd_pct >= 95 else "🟡 NEEDS ATTENTION" if otd_pct >= 85 else "🔴 CRITICAL"
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=otd_pct,
+        title={"text": "On-Time Delivery %", "font": {"color": "#8899bb", "size": 13}},
+        number={"suffix": "%", "font": {"color": gauge_color, "size": 28}},
+        gauge={
+            "axis":  {"range": [0, 100], "tickcolor": "#4a5a7a"},
+            "bar":   {"color": gauge_color},
+            "bgcolor": "#0d1628",
+            "steps": [
+                {"range": [0,   85],  "color": "rgba(239,68,68,.15)"},
+                {"range": [85,  95],  "color": "rgba(245,158,11,.15)"},
+                {"range": [95,  100], "color": "rgba(16,185,129,.15)"},
+            ],
+            "threshold": {"line": {"color": "#fff", "width": 2}, "thickness": 0.75, "value": 95},
+        }
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#8899bb",
+                      height=220, margin=dict(l=20,r=20,t=40,b=10))
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown(f'<div style="text-align:center;font-size:12px;font-weight:600;color:{gauge_color}">{traffic_light}</div>', unsafe_allow_html=True)
+
+with col2:
+    # P50/P90 delivery time chart
+    percentiles = ["P50 (Median)", "Avg Time", "P90 (90th %ile)", "Promise"]
+    values      = [p50_time, avg_time, p90_time, promised_time]
+    colors      = ["#10b981", "#6366f1", "#ef4444", "#f59e0b"]
+    fig = go.Figure(go.Bar(
+        x=values, y=percentiles, orientation="h",
+        marker_color=colors, marker_line_width=0,
+    ))
+    for i, (v, p) in enumerate(zip(values, percentiles)):
+        fig.add_annotation(x=v+0.3, y=i, text=f"{v:.1f} min",
+                          font=dict(color="#f0f4ff", size=11), showarrow=False)
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font_color="#8899bb", height=220,
+                      title=dict(text="Delivery Time Distribution", font=dict(color="#f0f4ff", size=13)),
+                      margin=dict(l=10,r=40,t=40,b=10),
+                      xaxis=dict(title="Minutes", gridcolor="rgba(99,130,255,.05)"),
+                      yaxis=dict(gridcolor="rgba(0,0,0,0)"))
+    st.plotly_chart(fig, use_container_width=True)
+    if p90_time > 20:
+        st.markdown('<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:7px;padding:7px 10px;font-size:11px;color:#f87171">⚠ P90 > 20 min — 10% of customers have poor experience!</div>', unsafe_allow_html=True)
+
+with col3:
+    # Delivery time histogram
+    hist_data = np.histogram(delivery_times, bins=12)
+    fig = go.Figure(go.Bar(
+        x=[(hist_data[1][i]+hist_data[1][i+1])/2 for i in range(len(hist_data[0]))],
+        y=hist_data[0],
+        marker_color=["#ef4444" if x > promised_time+2 else "#10b981"
+                      for x in [(hist_data[1][i]+hist_data[1][i+1])/2 for i in range(len(hist_data[0]))]],
+        marker_line_width=0,
+    ))
+    fig.add_vline(x=promised_time, line_dash="dash", line_color="#f59e0b",
+                  annotation_text="10-min promise", annotation_font_color="#f59e0b")
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font_color="#8899bb", height=220,
+                      title=dict(text="Delivery Time Distribution", font=dict(color="#f0f4ff", size=13)),
+                      margin=dict(l=10,r=10,t=40,b=10),
+                      xaxis=dict(title="Minutes", gridcolor="rgba(99,130,255,.05)"),
+                      yaxis=dict(title="Orders", gridcolor="rgba(99,130,255,.05)"))
+    st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ── UNIT ECONOMICS ────────────────────────────────────────────────────────────────
+st.markdown('<div class="section-head">💰 UNIT ECONOMICS — CONTRIBUTION MARGIN</div>', unsafe_allow_html=True)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    # Waterfall chart: Revenue → Net Profit
+    avg_rev      = float(df["Total Revenue"].mean()) if len(df) > 0 else 500
+    avg_cogs     = avg_rev * 0.52
+    avg_rider    = avg_rev * 0.12
+    avg_pkg      = avg_rev * 0.03
+    avg_gateway  = avg_rev * 0.02
+    avg_promo    = avg_rev * 0.05
+    net_profit   = avg_rev - avg_cogs - avg_rider - avg_pkg - avg_gateway - avg_promo
+    contrib_margin = (net_profit / avg_rev * 100) if avg_rev > 0 else 0
+
+    labels = ["Revenue", "COGS", "Rider Pay", "Packaging", "Gateway Fee", "Promos", "Net Profit"]
+    values = [avg_rev, -avg_cogs, -avg_rider, -avg_pkg, -avg_gateway, -avg_promo, net_profit]
+    colors = ["#10b981","#ef4444","#ef4444","#f59e0b","#f59e0b","#f59e0b",
+              "#10b981" if net_profit > 0 else "#ef4444"]
+
+    fig = go.Figure(go.Waterfall(
+        name="Unit Economics",
+        orientation="v",
+        measure=["absolute","relative","relative","relative","relative","relative","total"],
+        x=labels,
+        y=values,
+        text=[fmt(abs(v)) for v in values],
+        textposition="outside",
+        connector={"line": {"color": "rgba(99,130,255,.3)"}},
+        decreasing={"marker": {"color": "#ef4444"}},
+        increasing={"marker": {"color": "#10b981"}},
+        totals={"marker": {"color": "#6366f1"}},
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font_color="#8899bb", height=320,
+                      title=dict(text=f"Revenue → Net Profit Waterfall (Avg per batch) | CM: {contrib_margin:.1f}%",
+                                font=dict(color="#f0f4ff", size=12)),
+                      margin=dict(l=10,r=10,t=50,b=10),
+                      yaxis=dict(gridcolor="rgba(99,130,255,.05)"),
+                      showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    # Cost breakdown donut
+    cost_labels = ["COGS (52%)", "Rider Pay (12%)", "Packaging (3%)", "Gateway (2%)", "Promos (5%)", "Net Profit (26%)"]
+    cost_vals   = [avg_cogs, avg_rider, avg_pkg, avg_gateway, avg_promo, max(0, net_profit)]
+    cost_colors = ["#6366f1","#06b6d4","#f59e0b","#8b5cf6","#ec4899","#10b981"]
+
+    fig = go.Figure(go.Pie(
+        labels=cost_labels, values=cost_vals,
+        hole=0.6, marker=dict(colors=cost_colors),
+        textinfo="label+percent", textfont=dict(size=10),
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=320,
+                      title=dict(text="Cost Structure Breakdown", font=dict(color="#f0f4ff", size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10),
+                      legend=dict(font=dict(size=9)))
+    st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ── ORDER DEFECT RATE (FUNNEL) ────────────────────────────────────────────────────
+st.markdown('<div class="section-head">🔍 ORDER QUALITY — DEFECT RATE ANALYSIS</div>', unsafe_allow_html=True)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    total_ord      = int(total_orders)
+    expired        = int(total_ord * 0.018)
+    missing        = int(total_ord * 0.024)
+    cancelled_oos  = int(total_ord * 0.031)
+    total_defects  = expired + missing + cancelled_oos
+    perfect_orders = total_ord - total_defects
+    odr_pct        = total_defects / total_ord * 100 if total_ord > 0 else 0
+
+    funnel_labels = ["Total Orders", "After Expired/Damaged", "After Missing Items", "After OOS Cancels", "✅ Perfect Orders"]
+    funnel_vals   = [total_ord,
+                     total_ord - expired,
+                     total_ord - expired - missing,
+                     total_ord - expired - missing - cancelled_oos,
+                     perfect_orders]
+
+    fig = go.Figure(go.Funnel(
+        y=funnel_labels, x=funnel_vals,
+        textinfo="value+percent initial",
+        marker=dict(color=["#6366f1","#8b5cf6","#f59e0b","#ef4444","#10b981"]),
+        connector=dict(line=dict(color="rgba(99,130,255,.2)", width=1)),
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font_color="#8899bb", height=300,
+                      title=dict(text=f"Order Quality Funnel | ODR: {odr_pct:.1f}%", font=dict(color="#f0f4ff", size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    defect_cats   = ["Expired/Damaged", "Missing Items", "Cancelled (OOS)"]
+    defect_counts = [expired, missing, cancelled_oos]
+    defect_colors = ["#ef4444","#f59e0b","#8b5cf6"]
+
+    fig = go.Figure(go.Bar(
+        x=defect_cats, y=defect_counts,
+        marker_color=defect_colors, marker_line_width=0,
+        text=defect_counts, textposition="outside",
+        textfont=dict(color="#f0f4ff"),
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font_color="#8899bb", height=300,
+                      title=dict(text="Defect Breakdown by Category", font=dict(color="#f0f4ff", size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10),
+                      yaxis=dict(gridcolor="rgba(99,130,255,.05)"),
+                      xaxis=dict(gridcolor="rgba(0,0,0,0)"))
+    st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ── INVENTORY INTELLIGENCE ────────────────────────────────────────────────────────
+st.markdown('<div class="section-head">📦 INVENTORY INTELLIGENCE — STOCK ALERTS</div>', unsafe_allow_html=True)
+
+# Calculate velocity (orders per product) and simulate stock levels
+prod_velocity = df.groupby("Product Name")["Orders"].sum().sort_values(ascending=False)
+np.random.seed(123)
+stock_data = []
+for prod, velocity in prod_velocity.head(10).items():
+    stock_left   = int(np.random.randint(5, 200))
+    daily_sales  = int(velocity * 0.3)
+    days_left    = stock_left / daily_sales if daily_sales > 0 else 99
+    risk         = "🔴 CRITICAL" if days_left < 1 else "🟡 LOW" if days_left < 2 else "🟢 OK"
+    risk_color   = "#ef4444" if days_left < 1 else "#f59e0b" if days_left < 2 else "#10b981"
+    reorder      = "⚡ ORDER NOW" if days_left < 1 else "📋 Plan Reorder" if days_left < 2 else "✅ Sufficient"
+    stock_data.append({
+        "Product": prod,
+        "Stock Left": stock_left,
+        "Daily Sales": daily_sales,
+        "Days Cover": round(days_left, 1),
+        "Risk": risk,
+        "Action": reorder,
+        "_color": risk_color,
+    })
+
+stock_df = pd.DataFrame(stock_data)
+
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.markdown('<div style="font-size:11px;font-weight:600;color:#a5b4fc;margin-bottom:10px">⚡ Top 10 High-Risk Inventory Items</div>', unsafe_allow_html=True)
+    for _, row in stock_df.iterrows():
+        clr = row["_color"]
+        bg  = "rgba(239,68,68,.08)" if "CRITICAL" in row["Risk"] else "rgba(245,158,11,.08)" if "LOW" in row["Risk"] else "rgba(16,185,129,.06)"
+        bc  = "rgba(239,68,68,.3)"  if "CRITICAL" in row["Risk"] else "rgba(245,158,11,.3)"  if "LOW" in row["Risk"] else "rgba(16,185,129,.2)"
+        st.markdown(f"""
+        <div style="background:{bg};border:1px solid {bc};border-radius:8px;padding:10px 14px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#f0f4ff">{row['Product']}</div>
+            <div style="font-size:10px;color:#8899bb;margin-top:2px">Stock: {row['Stock Left']} units &nbsp;·&nbsp; Daily sales: {row['Daily Sales']} units &nbsp;·&nbsp; Covers: {row['Days Cover']} days</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;font-weight:700;color:{clr}">{row['Risk']}</div>
+            <div style="font-size:10px;color:{clr};margin-top:2px">{row['Action']}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+with col2:
+    # Stockout risk gauge
+    critical_count = len(stock_df[stock_df["Risk"].str.contains("CRITICAL")])
+    low_count      = len(stock_df[stock_df["Risk"].str.contains("LOW")])
+    ok_count       = len(stock_df[stock_df["Risk"].str.contains("OK")])
+
+    fig = go.Figure(go.Pie(
+        labels=["Critical 🔴", "Low Stock 🟡", "OK 🟢"],
+        values=[critical_count, low_count, ok_count],
+        hole=0.65,
+        marker=dict(colors=["#ef4444","#f59e0b","#10b981"]),
+        textinfo="label+value",
+        textfont=dict(size=11),
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#8899bb",
+                      height=280,
+                      title=dict(text="Stock Risk Distribution", font=dict(color="#f0f4ff", size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10),
+                      legend=dict(font=dict(size=10)))
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown(f"""
+    <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:12px;text-align:center;margin-top:8px">
+      <div style="font-size:22px;font-weight:700;color:#ef4444">{critical_count}</div>
+      <div style="font-size:10px;color:#8899bb">Products need immediate reorder</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ── CUSTOMER RETENTION COHORT ─────────────────────────────────────────────────────
+st.markdown('<div class="section-head">👥 CUSTOMER RETENTION — NEW vs REPEAT</div>', unsafe_allow_html=True)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    # Simulated cohort data
+    weeks   = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5", "Week 6"]
+    new_c   = [1200, 980, 1100, 870, 1050, 920]
+    repeat_c = [800, 920, 1050, 1100, 1200, 1280]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="New Customers",    x=weeks, y=new_c,    marker_color="#6366f1", marker_line_width=0))
+    fig.add_trace(go.Bar(name="Repeat Customers", x=weeks, y=repeat_c, marker_color="#10b981", marker_line_width=0))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font_color="#8899bb", height=280, barmode="group",
+                      title=dict(text="New vs Repeat Customers (Weekly)", font=dict(color="#f0f4ff", size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10),
+                      legend=dict(font=dict(size=10)),
+                      yaxis=dict(gridcolor="rgba(99,130,255,.05)"),
+                      xaxis=dict(gridcolor="rgba(0,0,0,0)"))
+    st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    # Retention heatmap
+    cohort_weeks  = ["Week 1", "Week 2", "Week 3", "Week 4"]
+    retention_wks = ["W+0", "W+1", "W+2", "W+3"]
+    retention_matrix = [
+        [100, 68, 52, 41],
+        [100, 71, 55, 43],
+        [100, 65, 48, 38],
+        [100, 73, 58, 46],
+    ]
+    fig = go.Figure(go.Heatmap(
+        z=retention_matrix,
+        x=retention_wks,
+        y=cohort_weeks,
+        colorscale=[[0,"#0d1628"],[0.4,"#312e81"],[0.7,"#4338ca"],[1,"#6366f1"]],
+        text=[[f"{v}%" for v in row] for row in retention_matrix],
+        texttemplate="%{text}",
+        hovertemplate="Cohort: %{y}<br>Week: %{x}<br>Retention: %{text}<extra></extra>",
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=280,
+                      title=dict(text="Cohort Retention Table (%)", font=dict(color="#f0f4ff", size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ── Raw Data Table ────────────────────────────────────────────────────────────────
 # ── Raw Data Table ────────────────────────────────────────────────────────────────
 if show_raw:
     st.markdown('<div class="section-head">RAW DATA TABLE</div>', unsafe_allow_html=True)
