@@ -33,32 +33,44 @@ footer {visibility: hidden;}
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 
-/* 🎯 STRUCTURAL RE-ALIGNMENT: Clear the text vertical squish */
+/* 🗂️ STEP 1: Fix the global flex grid structural alignment wrapper */
+.stAppDeployWithLayout {
+    flex-direction: row !important;
+}
+
+/* 🎯 STEP 2: Establish the sidebar structure parameters explicitly */
 [data-testid="stSidebar"] {
-    min-width: 340px !important;
-    max-width: 340px !important;
-    width: 340px !important;
+    min-width: 320px !important;
+    max-width: 320px !important;
+    width: 320px !important;
+    transform: none !important;
+    left: 0 !important;
+    visibility: visible !important;
     background-color: #0d1628 !important;
     border-right: 1px solid rgba(99,130,255,.1) !important;
 }
 
-/* Force the internal sidebar contents block to inherit the full width */
+/* 📥 STEP 3: Stretch the actual text, uploaders, and fields to the size profile */
 [data-testid="stSidebarUserContent"] {
-    width: 340px !important;
+    width: 320px !important;
     padding: 1.5rem !important;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 
-/* Give the central main analytics view breathing room so it doesn't clip the side */
+/* 📈 STEP 4: Force the central metrics sheet view to align cleanly alongside it */
 [data-testid="stMain"] {
-    margin-left: 20px !important;
+    margin-left: 0px !important;
+    width: 100% !important;
 }
 
-/* Hide the collapsible mobile control hook so it stays stationary and clean */
+/* Clear out the mobile collapsible chevron completely */
 [data-testid="collapsedControl"] {
     display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
