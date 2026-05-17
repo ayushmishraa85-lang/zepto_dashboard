@@ -22,7 +22,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Clean Sidebar Controller CSS ──────────────────────────────────────────────
 st.markdown("""
 <style>
 [data-testid="stToolbar"] {visibility: hidden;}
@@ -30,25 +29,7 @@ st.markdown("""
 [data-testid="stDeployButton"] {visibility: hidden;}
 [data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
-header {visibility: hidden;}
-[data-testid="collapsedControl"] {display: flex !important; visibility: visible !important; opacity: 1 !important;}
 #MainMenu {visibility: hidden;}
-
-/* Restored native toggle button with modern styling matching the dark hub theme */
-[data-testid="collapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    position: fixed !important;
-    top: 0.75rem !important;
-    left: 0.75rem !important;
-    z-index: 999999 !important;
-    background-color: #0d1628 !important;
-    border: 1px solid rgba(99,130,255,.2) !important;
-    border-radius: 8px !important;
-    padding: 6px !important;
-}
-[data-testid="collapsedControl"] svg { fill: #a5b4fc !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -143,6 +124,9 @@ def clean(df):
 
 @st.cache_data
 def load_default():
+    path = os.path.join(os.path.dirname(__file__), "..", "data", "zepto_sales_dataset.csv")
+    if os.path.exists(path):
+        return clean(pd.read_csv(path))
     csv = """Product Name,Category,City,Original Price,Current Price,Discount,Orders,Total Revenue,Influencer Active
 Britannia Cake,Snacks,Delhi,148,163,5,283,44714,No
 Britannia Cake,Snacks,Pune,81,86,10,284,21584,Yes
@@ -176,7 +160,7 @@ Nestle Munch,Confectionery,Mumbai,195,205,0,223,45715,No
 Britannia Cake,Snacks,Delhi,148,163,5,283,44714,No"""
     return clean(pd.read_csv(io.StringIO(csv)))
 
-# ── SIDEBAR INTERFACE ────────────────────────────────────────────────────────────
+# ── SIDEBAR ──────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
     <div style="text-align:center;padding:12px 0 20px">
@@ -185,11 +169,9 @@ with st.sidebar:
       <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v2.0</div>
     </div>
     """, unsafe_allow_html=True)
-    
     st.markdown("#### 📂 Data Source")
     uploaded = st.file_uploader("Upload your CSV", type=["csv"], help="Replace the default dataset")
     st.markdown("---")
-    
     st.markdown("#### 🔍 Filters")
     df_raw = load_default()
     if uploaded:
@@ -198,24 +180,20 @@ with st.sidebar:
             st.success(f"✅ Loaded {len(df_raw):,} rows")
         except Exception as e:
             st.error(f"❌ {e}")
-            
     cities     = ["All"] + sorted(df_raw["City"].unique())
     categories = ["All"] + sorted(df_raw["Category"].unique())
     products   = ["All"] + sorted(df_raw["Product Name"].unique())
-    
     sel_city = st.selectbox("City / Region", cities)
     sel_cat  = st.selectbox("Category",      categories)
     sel_inf  = st.selectbox("Influencer",    ["All", "Yes", "No"])
     sel_prod = st.selectbox("Product",       products)
     search   = st.text_input("Search product", placeholder="e.g. Maggi...")
     st.markdown("---")
-    
     st.markdown("#### ⚙️ Settings")
     auto_refresh = st.checkbox("Auto Refresh (30s)", value=False)
     show_raw     = st.checkbox("Show Raw Data Table", value=False)
     show_stats   = st.checkbox("Show Statistical Analysis", value=True)
     st.markdown("---")
-    
     st.markdown("""
     <div style="font-size:10px;color:#4a5a7a;text-align:center">
       Developed by <strong style="color:#a5b4fc">Ayush Mishra</strong><br>
@@ -223,7 +201,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-# ── APPLY FILTERS ────────────────────────────────────────────────────────────────
+# ── FILTERS ──────────────────────────────────────────────────────────────────────
 df = df_raw.copy()
 if sel_city != "All": df = df[df["City"]              == sel_city]
 if sel_cat  != "All": df = df[df["Category"]          == sel_cat]
@@ -260,12 +238,12 @@ rev_std      = df["Total Revenue"].std()
 st.markdown('<div class="section-head">KEY PERFORMANCE INDICATORS</div>', unsafe_allow_html=True)
 c1,c2,c3,c4,c5,c6 = st.columns(6)
 kpis = [
-    (c1,"💰","Total Revenue",   fmt(total_rev),                                                                  f"σ = {fmt(rev_std)}",            "#a5b4fc","↑ +12.4%","up"),
-    (c2,"📈","Total Profit",    fmt(total_profit),                                                               "Net margin earnings",             "#6ee7b7","↑ +8.1%", "up"),
-    (c3,"🛒","Total Orders",    f"{int(total_orders):,}",                                                        "Units sold",                      "#fcd34d","↑ +5.3%", "up"),
-    (c4,"%", "Profit Margin",   f"{margin:.1f}%",                                                                "Revenue to profit ratio",          "#fca5a5","↑ +2.1%", "up"),
-    (c5,"⭐","Top Category",    cat_rev.index[0]  if len(cat_rev)  else "—",                    fmt(cat_rev.iloc[0])  if len(cat_rev)  else "—", "#67e8f9","Leader","up"),
-    (c6,"📍","Top Region",      city_rev.index[0] if len(city_rev) else "—",                    fmt(city_rev.iloc[0]) if len(city_rev) else "—", "#c4b5fd","Leader","up"),
+    (c1,"💰","Total Revenue",   fmt(total_rev),                                                 f"σ = {fmt(rev_std)}",            "#a5b4fc","↑ +12.4%","up"),
+    (c2,"📈","Total Profit",    fmt(total_profit),                                              "Net margin earnings",             "#6ee7b7","↑ +8.1%", "up"),
+    (c3,"🛒","Total Orders",    f"{int(total_orders):,}",                                       "Units sold",                      "#fcd34d","↑ +5.3%", "up"),
+    (c4,"%", "Profit Margin",   f"{margin:.1f}%",                                               "Revenue to profit ratio",         "#fca5a5","↑ +2.1%", "up"),
+    (c5,"⭐","Top Category",    cat_rev.index[0]  if len(cat_rev)  else "—",                   fmt(cat_rev.iloc[0])  if len(cat_rev)  else "—", "#67e8f9","Leader","up"),
+    (c6,"📍","Top Region",      city_rev.index[0] if len(city_rev) else "—",                   fmt(city_rev.iloc[0]) if len(city_rev) else "—", "#c4b5fd","Leader","up"),
 ]
 for col, icon, label, val, sub, clr, badge, cls in kpis:
     with col:
@@ -457,7 +435,7 @@ r_d, p_d  = stats.pearsonr(df["Discount"], df["Orders"]) if len(df)>=5 else (0,1
 prod_rev2 = df.groupby("Product Name")["Total Revenue"].sum().sort_values(ascending=False)
 insights = [
     ("🏆","Best Category",      f"<strong>{cat_rev2.index[0]}</strong> drives {cat_rev2.iloc[0]/cat_rev2.sum()*100:.1f}% of total revenue ({fmt(cat_rev2.iloc[0])}). Maximize marketing budget here for peak ROI."),
-    ("🌍","Regional Gap",       f"<strong>{city_rev2.index[0]}</strong> ({fmt(city_rev2.iloc[0])}) outperforms <strong>{city_rev2.index[-1]}</strong> ({fmt(city_rev2.iloc[-1])}) by {(city_rev2.iloc[0]-city_rev2.iloc[-1])/city_rev2.iloc[-1]*100:.0f}%. Target promotions in underperforming regions."),
+    ("🌍","Regional Gap",        f"<strong>{city_rev2.index[0]}</strong> ({fmt(city_rev2.iloc[0])}) outperforms <strong>{city_rev2.index[-1]}</strong> ({fmt(city_rev2.iloc[-1])}) by {(city_rev2.iloc[0]-city_rev2.iloc[-1])/city_rev2.iloc[-1]*100:.0f}%. Target promotions in underperforming regions."),
     ("⚡","Influencer Lift",     f"Influencer-active products generate <strong>{lift:+.1f}%</strong> more revenue. {'Statistically significant ✓' if p_inf<0.05 else 'Not yet significant'} (p={p_inf:.3f})."),
     ("📈","Profit Margin",       f"Overall margin is <strong>{margin:.1f}%</strong>. {df.groupby('Category')['Profit Margin'].mean().sort_values(ascending=False).index[0]} has the highest avg margin."),
     ("💡","Discount Intelligence",f"Discount is {'positively' if r_d>0 else 'negatively'} correlated with orders (r={r_d:.3f}, p={p_d:.3f}). {'Discounting drives volume.' if r_d>0 else 'Review your discount strategy.'}"),
@@ -699,7 +677,7 @@ def blinkbot_analyze(question, data):
     total_p  = data["Profit"].sum()        if "Profit"        in data.columns else 0
     mgn      = (total_p/total_r*100) if total_r > 0 else 0
     cat_r    = data.groupby("Category")["Total Revenue"].sum().sort_values(ascending=False) if "Category"     in data.columns else None
-    city_r   = data.groupby("City")["Total Revenue"].sum().sort_values(ascending=False)     if "City"          in data.columns else None
+    city_r   = data.groupby("City")["Total Revenue"].sum().sort_values(ascending=False)     if "City"         in data.columns else None
     prod_r   = data.groupby("Product Name")["Total Revenue"].sum().sort_values(ascending=False) if "Product Name" in data.columns else None
     def f(n):
         if n >= 1e7: return f"₹{n/1e7:.2f}Cr"
@@ -811,8 +789,8 @@ with qcol4:
     if st.button(quick_items[3][0], key="bb_q3", use_container_width=True):
         clicked_quick = quick_items[3][1]
 
-# ── Text Input (Form Execution Patch Applied) ─────────────────────────────────────
-with st.form(key="bb_main_form", clear_on_submit=False):
+# ── Text Input ────────────────────────────────────────────────────────────────────
+with st.form(key="bb_main_form", clear_on_submit=True):
     fc1, fc2 = st.columns([5, 1])
     with fc1:
         user_input = st.text_input("Ask BlinkBot...", placeholder="e.g. What is my total profit? Which city is weakest?", label_visibility="collapsed")
