@@ -27,38 +27,23 @@ st.set_page_config(
 st.markdown("""
 <style>
 [data-testid="stToolbar"] {visibility: hidden;}
-[data-testid="collapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    position: fixed !important;
-    top: 0.5rem !important;
-    left: 0.5rem !important;
-    z-index: 999999 !important;
-    background: #1e2d4a !important;
-    border-radius: 8px !important;
-    padding: 2px !important;
-}
 [data-testid="stDecoration"] {visibility: hidden;}
 [data-testid="stDeployButton"] {visibility: hidden;}
 [data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
+
+/* Ensures the sidebar opening arrow button is styled nicely and stays visible */
 [data-testid="collapsedControl"] {
     display: flex !important;
     visibility: visible !important;
-    opacity: 1 !important;
-    position: fixed !important;
-    top: 0.5rem !important;
-    left: 0.5rem !important;
-    z-index: 999999 !important;
-    background-color: #1e2d4a !important;
+    background-color: #0d1628 !important;
+    border: 1px solid rgba(99,130,255,.2) !important;
     border-radius: 8px !important;
     padding: 4px !important;
-}
-[data-testid="collapsedControl"] svg {
-    fill: #a5b4fc !important;
+    top: 1rem !important;
+    left: 1rem !important;
 }
 </style>
 """, unsafe_allow_html=True)
