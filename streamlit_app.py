@@ -27,6 +27,18 @@ st.set_page_config(
 st.markdown("""
 <style>
 [data-testid="stToolbar"] {visibility: hidden;}
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    top: 0.5rem !important;
+    left: 0.5rem !important;
+    z-index: 999999 !important;
+    background: #1e2d4a !important;
+    border-radius: 8px !important;
+    padding: 2px !important;
+}
 [data-testid="stDecoration"] {visibility: hidden;}
 [data-testid="stDeployButton"] {visibility: hidden;}
 [data-testid="stToolbarActions"] {display: none !important;}
@@ -1738,7 +1750,7 @@ with chat_container:
             st.markdown(f'''<div class="chat-message-user">💬 {msg["msg"]}</div>''', unsafe_allow_html=True)
 
 # Text input
-with st.form(key="blinkbot_form", clear_on_submit=True):
+with st.form(key="blinkbot_form_2", clear_on_submit=True):
     fcol1, fcol2 = st.columns([5, 1])
     with fcol1:
         user_input = st.text_input(
