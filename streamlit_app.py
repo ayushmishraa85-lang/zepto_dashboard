@@ -24,6 +24,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+/* Clean up default headers and utilities */
 [data-testid="stToolbar"] {visibility: hidden;}
 [data-testid="stDecoration"] {visibility: hidden;}
 [data-testid="stDeployButton"] {visibility: hidden;}
@@ -32,27 +33,32 @@ footer {visibility: hidden;}
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 
-/* 🎯 FIX: Force sidebar open perfectly without overlapping content */
+/* 🎯 STRUCTURAL RE-ALIGNMENT: Clear the text vertical squish */
 [data-testid="stSidebar"] {
-    left: 0 !important;
-    transform: none !important;
-    visibility: visible !important;
-    width: 320px !important; /* Sets a crisp, readable width */
-    background-color: #0d1628 !important; /* Matches dashboard cards */
+    min-width: 340px !important;
+    max-width: 340px !important;
+    width: 340px !important;
+    background-color: #0d1628 !important;
     border-right: 1px solid rgba(99,130,255,.1) !important;
 }
 
-/* Ensure the main content shifts right and doesn't squash the sidebar text */
-[data-testid="stAppViewContainer"] {
-    margin-left: 0px !important;
+/* Force the internal sidebar contents block to inherit the full width */
+[data-testid="stSidebarUserContent"] {
+    width: 340px !important;
+    padding: 1.5rem !important;
 }
 
+/* Give the central main analytics view breathing room so it doesn't clip the side */
+[data-testid="stMain"] {
+    margin-left: 20px !important;
+}
+
+/* Hide the collapsible mobile control hook so it stays stationary and clean */
 [data-testid="collapsedControl"] {
-    display: none !important; /* Hides the broken toggle switch since it's forced open */
+    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
-
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
