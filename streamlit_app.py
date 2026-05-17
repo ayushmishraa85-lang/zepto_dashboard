@@ -19,7 +19,7 @@ st.set_page_config(
     page_title="Ayush Intelligence Hub",
     page_icon="🛒",
     layout="wide",
-    initial_sidebar_state="expanded", # Starts open, but allows the user to close it!
+    initial_sidebar_state="expanded", # Starts open, but lets users minimize it!
 )
 
 st.markdown("""
@@ -33,28 +33,45 @@ footer {visibility: hidden;}
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 
-/* 🎯 FIX: Sets the open sidebar width cleanly without breaking the toggle animation */
+/* 🎯 FIX 1: Set a crisp open layout width that never squashes text */
 [data-testid="stSidebar"] {
     min-width: 320px !important;
     max-width: 320px !important;
     width: 320px !important;
     background-color: #0d1628 !important;
     border-right: 1px solid rgba(99,130,255,.1) !important;
-    transition: min-width 0.2s, max-width 0.2s, width 0.2s; /* Smooth closing transition */
 }
 
-/* Ensure inside text and input fields span perfectly to fill the width */
+/* Ensure data fields and text block span inside the panel perfectly */
 [data-testid="stSidebarUserContent"] {
     width: 100% !important;
 }
 
-/* Modern dark-theme styling for the open/close button toggle blocks */
-[data-testid="collapsedControl"],
+/* 🎯 FIX 2: Style the native closing arrow ('X' or '<') inside the sidebar */
 button[kind="header_sidebar_toggle"] {
     background-color: #121d35 !important;
     border: 1px solid rgba(99,130,255,.2) !important;
     border-radius: 8px !important;
     color: #a5b4fc !important;
+}
+
+/* 🎯 FIX 3: Style the 'Open Sidebar' floating button ('>') so it NEVER vanishes */
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    top: 1rem !important;
+    left: 1rem !important;
+    z-index: 999999 !important;
+    background-color: #121d35 !important;
+    border: 1px solid rgba(99,130,255,.2) !important;
+    border-radius: 8px !important;
+    padding: 6px !important;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+[data-testid="collapsedControl"] svg {
+    fill: #a5b4fc !important;
 }
 </style>
 """, unsafe_allow_html=True)
