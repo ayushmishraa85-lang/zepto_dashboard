@@ -19,7 +19,7 @@ st.set_page_config(
     page_title="Ayush Intelligence Hub",
     page_icon="🛒",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded", # Starts open, but allows the user to close it!
 )
 
 st.markdown("""
@@ -33,44 +33,31 @@ footer {visibility: hidden;}
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 
-/* 🗂️ STEP 1: Fix the global flex grid structural alignment wrapper */
-.stAppDeployWithLayout {
-    flex-direction: row !important;
-}
-
-/* 🎯 STEP 2: Establish the sidebar structure parameters explicitly */
+/* 🎯 FIX: Sets the open sidebar width cleanly without breaking the toggle animation */
 [data-testid="stSidebar"] {
     min-width: 320px !important;
     max-width: 320px !important;
     width: 320px !important;
-    transform: none !important;
-    left: 0 !important;
-    visibility: visible !important;
     background-color: #0d1628 !important;
     border-right: 1px solid rgba(99,130,255,.1) !important;
+    transition: min-width 0.2s, max-width 0.2s, width 0.2s; /* Smooth closing transition */
 }
 
-/* 📥 STEP 3: Stretch the actual text, uploaders, and fields to the size profile */
+/* Ensure inside text and input fields span perfectly to fill the width */
 [data-testid="stSidebarUserContent"] {
-    width: 320px !important;
-    padding: 1.5rem !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-
-/* 📈 STEP 4: Force the central metrics sheet view to align cleanly alongside it */
-[data-testid="stMain"] {
-    margin-left: 0px !important;
     width: 100% !important;
 }
 
-/* Clear out the mobile collapsible chevron completely */
-[data-testid="collapsedControl"] {
-    display: none !important;
+/* Modern dark-theme styling for the open/close button toggle blocks */
+[data-testid="collapsedControl"],
+button[kind="header_sidebar_toggle"] {
+    background-color: #121d35 !important;
+    border: 1px solid rgba(99,130,255,.2) !important;
+    border-radius: 8px !important;
+    color: #a5b4fc !important;
 }
 </style>
 """, unsafe_allow_html=True)
-
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
