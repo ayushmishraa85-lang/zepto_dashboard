@@ -29,10 +29,31 @@ st.markdown("""
 [data-testid="stDeployButton"] {visibility: hidden;}
 [data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
+header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
+
+/* 🛠️ STEP 2 FORCE ADD: Breaks the browser memory lock and opens the panel */
+[data-testid="stSidebar"] {
+    left: 0 !important;
+    transform: none !important;
+    visibility: visible !important;
+}
+
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    top: 0.5rem !important;
+    left: 0.5rem !important;
+    z-index: 999999 !important;
+    background-color: #1e2d4a !important;
+    border-radius: 8px !important;
+    padding: 4px !important;
+}
+[data-testid="collapsedControl"] svg { fill: #a5b4fc !important; }
 </style>
 """, unsafe_allow_html=True)
-
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
