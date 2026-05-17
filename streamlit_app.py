@@ -32,28 +32,27 @@ footer {visibility: hidden;}
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 
-/* 🛠️ STEP 2 FORCE ADD: Breaks the browser memory lock and opens the panel */
+/* 🎯 FIX: Force sidebar open perfectly without overlapping content */
 [data-testid="stSidebar"] {
     left: 0 !important;
     transform: none !important;
     visibility: visible !important;
+    width: 320px !important; /* Sets a crisp, readable width */
+    background-color: #0d1628 !important; /* Matches dashboard cards */
+    border-right: 1px solid rgba(99,130,255,.1) !important;
+}
+
+/* Ensure the main content shifts right and doesn't squash the sidebar text */
+[data-testid="stAppViewContainer"] {
+    margin-left: 0px !important;
 }
 
 [data-testid="collapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    position: fixed !important;
-    top: 0.5rem !important;
-    left: 0.5rem !important;
-    z-index: 999999 !important;
-    background-color: #1e2d4a !important;
-    border-radius: 8px !important;
-    padding: 4px !important;
+    display: none !important; /* Hides the broken toggle switch since it's forced open */
 }
-[data-testid="collapsedControl"] svg { fill: #a5b4fc !important; }
 </style>
 """, unsafe_allow_html=True)
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
