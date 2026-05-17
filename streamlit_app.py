@@ -31,6 +31,7 @@ st.markdown("""
 [data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
+[data-testid="collapsedControl"] {display: flex !important; visibility: visible !important; opacity: 1 !important;}
 #MainMenu {visibility: hidden;}
 
 /* Restored native toggle button with modern styling matching the dark hub theme */
