@@ -30,6 +30,7 @@ st.markdown("""
 [data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
 #MainMenu {visibility: hidden;}
+section[data-testid="stSidebar"] > div:first-child {width: 250px !important;}
 </style>
 """, unsafe_allow_html=True)
 st.markdown("""
@@ -83,7 +84,6 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 }
 div[data-testid="metric-container"] { background: #0d1628; border: 1px solid rgba(99,130,255,.12); border-radius: 12px; padding: 12px; }
 </style>
-section[data-testid="stSidebar"] > div:first-child {width: 250px !important;}
 """, unsafe_allow_html=True)
 
 PAL     = ["#6366f1","#06b6d4","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#14b8a6","#f97316","#3b82f6"]
