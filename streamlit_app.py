@@ -19,18 +19,41 @@ st.set_page_config(
     page_title="Ayush Intelligence Hub",
     page_icon="🛒",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded", # Automatically starts open, but allows closing!
 )
- 
+
 st.markdown("""
 <style>
-[data-testid="stToolbar"] {visibility: hidden;}
+/* Clean up default headers and utilities without breaking layout elements */
+[data-testid="stToolbarActions"] {display: none !important;}
 [data-testid="stDecoration"] {visibility: hidden;}
 [data-testid="stDeployButton"] {visibility: hidden;}
-[data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
+header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
-section[data-testid="stSidebar"] > div:first-child {width: 250px !important;}
+
+/* Adjusts the open sidebar container size perfectly so text never squishes */
+[data-testid="stSidebar"] {
+    min-width: 320px;
+    max-width: 320px;
+    width: 320px;
+    background-color: #0d1628;
+    border-right: 1px solid rgba(99,130,255,.1);
+}
+
+/* Ensure inside controls fill out the container dimensions beautifully */
+[data-testid="stSidebarUserContent"] {
+    width: 100%;
+}
+
+/* Style the native open/close arrow buttons so they fit the dark hub theme */
+[data-testid="collapsedControl"],
+button[kind="header_sidebar_toggle"] {
+    background-color: #121d35 !important;
+    border: 1px solid rgba(99,130,255,.2) !important;
+    border-radius: 8px !important;
+    color: #a5b4fc !important;
+}
 </style>
 """, unsafe_allow_html=True)
 st.markdown("""
