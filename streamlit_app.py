@@ -20,6 +20,15 @@ st.set_page_config(
     page_icon="🛒",
     layout="wide",
     initial_sidebar_state="expanded",
+st.markdown("""
+<style>
+[data-testid="stDecoration"] {visibility: hidden;}
+[data-testid="stDeployButton"] {visibility: hidden;}
+[data-testid="stToolbarActions"] {display: none !important;}
+footer {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 )
 st.markdown("""
 <style>
