@@ -19,40 +19,59 @@ st.set_page_config(
     page_title="Ayush Intelligence Hub",
     page_icon="🛒",
     layout="wide",
-    initial_sidebar_state="expanded", # Automatically starts open, but allows closing!
+    initial_sidebar_state="expanded", # Starts open, but lets users close it cleanly!
 )
 
 st.markdown("""
 <style>
-/* Clean up default headers and utilities without breaking layout elements */
-[data-testid="stToolbarActions"] {display: none !important;}
+/* Clean up default headers and utilities */
+[data-testid="stToolbar"] {visibility: hidden;}
 [data-testid="stDecoration"] {visibility: hidden;}
 [data-testid="stDeployButton"] {visibility: hidden;}
+[data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 
-/* Adjusts the open sidebar container size perfectly so text never squishes */
+/* 🎯 FIX 1: Set a crisp open layout width that never squashes text */
 [data-testid="stSidebar"] {
-    min-width: 320px;
-    max-width: 320px;
-    width: 320px;
-    background-color: #0d1628;
-    border-right: 1px solid rgba(99,130,255,.1);
+    min-width: 320px !important;
+    max-width: 320px !important;
+    width: 320px !important;
+    background-color: #0d1628 !important;
+    border-right: 1px solid rgba(99,130,255,.1) !important;
 }
 
-/* Ensure inside controls fill out the container dimensions beautifully */
+/* Ensure data fields and text block span inside the panel perfectly */
 [data-testid="stSidebarUserContent"] {
-    width: 100%;
+    width: 100% !important;
 }
 
-/* Style the native open/close arrow buttons so they fit the dark hub theme */
-[data-testid="collapsedControl"],
+/* 🎯 FIX 2: Style the native closing arrow inside the sidebar */
 button[kind="header_sidebar_toggle"] {
     background-color: #121d35 !important;
     border: 1px solid rgba(99,130,255,.2) !important;
     border-radius: 8px !important;
     color: #a5b4fc !important;
+}
+
+/* 🎯 FIX 3: Force the 'Open Sidebar' floating button ('>') to stay visible */
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    top: 1rem !important;
+    left: 1rem !important;
+    z-index: 999999 !important;
+    background-color: #121d35 !important;
+    border: 1px solid rgba(99,130,255,.2) !important;
+    border-radius: 8px !important;
+    padding: 6px !important;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+[data-testid="collapsedControl"] svg {
+    fill: #a5b4fc !important;
 }
 </style>
 """, unsafe_allow_html=True)
