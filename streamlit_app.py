@@ -21,17 +21,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-st.markdown("""
-<style>
-[data-testid="stToolbar"] {visibility: hidden;}
-[data-testid="stDecoration"] {visibility: hidden;}
-[data-testid="stDeployButton"] {visibility: hidden;}
-[data-testid="stToolbarActions"] {display: none !important;}
-footer {visibility: hidden;}
-#MainMenu {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
