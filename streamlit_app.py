@@ -19,44 +19,18 @@ st.set_page_config(
     page_title="Ayush Intelligence Hub",
     page_icon="🛒",
     layout="wide",
-    initial_sidebar_state="expanded", # This starts it open, but allows closing!
+    initial_sidebar_state="expanded",
 )
-
+ 
 st.markdown("""
 <style>
-/* Clean up default headers and utilities */
 [data-testid="stToolbar"] {visibility: hidden;}
 [data-testid="stDecoration"] {visibility: hidden;}
 [data-testid="stDeployButton"] {visibility: hidden;}
 [data-testid="stToolbarActions"] {display: none !important;}
 footer {visibility: hidden;}
-header {visibility: hidden;}
 #MainMenu {visibility: hidden;}
-
-/* ✅ CLEAN SIDEBAR STYLE: Sets a crisp width without locking it permanently open */
-[data-testid="stSidebar"] {
-    min-width: 320px;
-    max-width: 320px;
-    width: 320px;
-    background-color: #0d1628;
-    border-right: 1px solid rgba(99,130,255,.1);
-}
-
-/* Ensure data fields and text layout match the space nicely */
-[data-testid="stSidebarUserContent"] {
-    width: 100%;
-}
-
-/* Style the native open/close arrow triggers so they fit the dark theme */
-[data-testid="collapsedControl"],
-button[kind="header_sidebar_toggle"] {
-    background-color: #121d35 !important;
-    border: 1px solid rgba(99,130,255,.2) !important;
-    border-radius: 8px !important;
-    color: #a5b4fc !important;
-}
 </style>
-section[data-testid="stSidebar"] > div:first-child {width: 250px !important;}
 """, unsafe_allow_html=True)
 st.markdown("""
 <style>
