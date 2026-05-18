@@ -56,6 +56,7 @@ button[kind="header_sidebar_toggle"] {
     color: #a5b4fc !important;
 }
 </style>
+section[data-testid="stSidebar"] > div:first-child {width: 250px !important;}
 """, unsafe_allow_html=True)
 st.markdown("""
 <style>
