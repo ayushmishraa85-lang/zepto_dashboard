@@ -15,6 +15,701 @@ from sklearn.linear_model import LinearRegression
 import warnings, io, os
 warnings.filterwarnings("ignore")
 
+"""
+animations.py — Drop-in animation module for Ayush Intelligence Hub (novams.streamlit.app)
+Usage: Add `from animations import inject_animations` at the top of every page file,
+       then call `inject_animations()` as the FIRST line inside the page function.
+"""
+
+import streamlit as st
+
+
+def inject_animations():
+    """Inject all premium dashboard animations via st.markdown HTML/CSS/JS."""
+    st.markdown(_get_full_css(), unsafe_allow_html=True)
+    st.markdown(_get_particles_js(), unsafe_allow_html=True)
+    st.markdown(_get_page_transition_js(), unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# KPI COUNTER  — call this instead of st.metric
+# ─────────────────────────────────────────────
+def animated_kpi(label: str, value, prefix: str = "", suffix: str = "",
+                 delta: str = None, delta_color: str = "#00e676"):
+    """
+    Renders an animated KPI card with a counting-up number effect.
+
+    Args:
+        label:       Card title  e.g. "Total Revenue"
+        value:       Numeric end value  e.g. 1_250_000
+        prefix:      e.g. "$"
+        suffix:      e.g. "%"  or  "K"
+        delta:       Optional delta string  e.g. "+12.4%"
+        delta_color: Hex color for delta badge (default green)
+    """
+    uid = f"kpi_{label.replace(' ', '_').lower()}"
+    delta_html = (
+        f'<span class="kpi-delta" style="color:{delta_color}">{delta}</span>'
+        if delta else ""
+    )
+    html = f"""
+    <div class="kpi-card glass-card" id="{uid}">
+        <div class="kpi-label">{label}</div>
+        <div class="kpi-value">
+            <span class="kpi-prefix">{prefix}</span>
+            <span class="kpi-number" data-target="{value}">0</span>
+            <span class="kpi-suffix">{suffix}</span>
+        </div>
+        {delta_html}
+    </div>
+    <script>
+    (function() {{
+        const el = document.querySelector('#{uid} .kpi-number');
+        if (!el || el.dataset.animated) return;
+        el.dataset.animated = true;
+        const target = parseFloat(el.dataset.target);
+        const isFloat = target % 1 !== 0;
+        const duration = 1800;
+        const start = performance.now();
+        function step(now) {{
+            const progress = Math.min((now - start) / duration, 1);
+            const ease = 1 - Math.pow(1 - progress, 4);
+            const current = target * ease;
+            el.textContent = isFloat
+                ? current.toFixed(2)
+                : Math.floor(current).toLocaleString();
+            if (progress < 1) requestAnimationFrame(step);
+            else el.textContent = isFloat
+                ? target.toFixed(2)
+                : target.toLocaleString();
+        }}
+        requestAnimationFrame(step);
+    }})();
+    </script>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# GLASS CARD  — wrap any content in a glass card
+# ─────────────────────────────────────────────
+def glass_card(content_html: str, glow_color: str = "#7c3aed"):
+    """Wrap arbitrary HTML in a glassmorphism card with hover glow."""
+    st.markdown(
+        f'<div class="glass-card" style="--glow:{glow_color}">{content_html}</div>',
+        unsafe_allow_html=True
+    )
+
+
+# ─────────────────────────────────────────────
+# SKELETON LOADER  — show while data loads
+# ─────────────────────────────────────────────
+def skeleton_loader(rows: int = 4, show: bool = True):
+    """Display a skeleton loading animation. Set show=False to hide."""
+    if not show:
+        return
+    bars = "".join(
+        f'<div class="skeleton-bar" style="width:{70 + (i * 7) % 30}%"></div>'
+        for i in range(rows)
+    )
+    st.markdown(
+        f'<div class="skeleton-container">{bars}</div>',
+        unsafe_allow_html=True
+    )
+
+
+# ─────────────────────────────────────────────
+# SECTION HEADER  — animated fade-in title
+# ─────────────────────────────────────────────
+def section_header(title: str, subtitle: str = "", icon: str = ""):
+    """Render an animated section header with optional icon and subtitle."""
+    st.markdown(f"""
+    <div class="section-header fade-in-up">
+        <h2 class="section-title">{icon} {title}</h2>
+        {"<p class='section-subtitle'>" + subtitle + "</p>" if subtitle else ""}
+        <div class="section-divider"></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# PLOTLY ANIMATION CONFIG  — apply to any fig
+# ─────────────────────────────────────────────
+def animate_plotly_fig(fig):
+    """
+    Apply premium animation settings to a Plotly figure.
+    Returns the modified figure — pass directly to st.plotly_chart().
+
+    Usage:
+        fig = px.bar(df, x='category', y='value')
+        fig = animate_plotly_fig(fig)
+        st.plotly_chart(fig, use_container_width=True)
+    """
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif", color="#e2e8f0"),
+        margin=dict(l=20, r=20, t=40, b=20),
+        hoverlabel=dict(
+            bgcolor="rgba(15,15,35,0.95)",
+            bordercolor="rgba(124,58,237,0.6)",
+            font_size=13,
+            font_family="Inter, sans-serif",
+        ),
+        xaxis=dict(
+            gridcolor="rgba(255,255,255,0.05)",
+            linecolor="rgba(255,255,255,0.1)",
+            tickfont=dict(color="#94a3b8"),
+        ),
+        yaxis=dict(
+            gridcolor="rgba(255,255,255,0.05)",
+            linecolor="rgba(255,255,255,0.1)",
+            tickfont=dict(color="#94a3b8"),
+        ),
+        legend=dict(
+            bgcolor="rgba(15,15,35,0.7)",
+            bordercolor="rgba(124,58,237,0.3)",
+            borderwidth=1,
+        ),
+        transition={"duration": 800, "easing": "cubic-in-out"},
+    )
+    # Smooth bar/line entrance
+    fig.update_traces(
+        marker_line_width=0,
+        selector=dict(type="bar"),
+    )
+    return fig
+
+
+# ══════════════════════════════════════════════
+# PRIVATE HELPERS
+# ══════════════════════════════════════════════
+
+def _get_full_css() -> str:
+    return """
+<style>
+/* ── Google Font ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ── Root Variables ── */
+:root {
+    --bg-primary:    #0a0a1a;
+    --bg-secondary:  #0f0f2e;
+    --bg-card:       rgba(255,255,255,0.04);
+    --border-glass:  rgba(255,255,255,0.08);
+    --accent:        #7c3aed;
+    --accent-soft:   rgba(124,58,237,0.15);
+    --accent2:       #06b6d4;
+    --text-primary:  #f1f5f9;
+    --text-muted:    #94a3b8;
+    --glow-purple:   0 0 20px rgba(124,58,237,0.35);
+    --glow-cyan:     0 0 20px rgba(6,182,212,0.35);
+    --radius:        14px;
+    --transition:    all 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ── Base App Styling ── */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif !important;
+    scroll-behavior: smooth;
+}
+
+.stApp {
+    background: linear-gradient(135deg, #0a0a1a 0%, #0f0f2e 50%, #0a0a1a 100%) !important;
+    min-height: 100vh;
+}
+
+/* ── Sidebar Slide Animation ── */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0d0d2b 0%, #0a0a1a 100%) !important;
+    border-right: 1px solid var(--border-glass) !important;
+    animation: slideInLeft 0.5s cubic-bezier(0.4,0,0.2,1) both;
+}
+
+@keyframes slideInLeft {
+    from { transform: translateX(-100%); opacity: 0; }
+    to   { transform: translateX(0);     opacity: 1; }
+}
+
+section[data-testid="stSidebar"] .stRadio label,
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] p {
+    color: var(--text-muted) !important;
+    transition: var(--transition);
+}
+
+section[data-testid="stSidebar"] .stRadio label:hover {
+    color: var(--text-primary) !important;
+    text-shadow: 0 0 8px rgba(124,58,237,0.6);
+}
+
+/* ── Main Content Fade-In ── */
+.main .block-container {
+    animation: fadeInUp 0.6s cubic-bezier(0.4,0,0.2,1) both;
+    padding-top: 2rem !important;
+}
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* ── Glass Card ── */
+.glass-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.glass-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(124,58,237,0.05) 0%, transparent 60%);
+    pointer-events: none;
+}
+
+.glass-card:hover {
+    border-color: rgba(124,58,237,0.4);
+    box-shadow: var(--glow-purple), inset 0 1px 0 rgba(255,255,255,0.08);
+    transform: translateY(-3px);
+}
+
+/* ── KPI Card ── */
+.kpi-card {
+    text-align: center;
+    cursor: default;
+    min-width: 140px;
+}
+
+.kpi-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+
+.kpi-value {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.kpi-prefix, .kpi-suffix {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--accent2);
+    vertical-align: super;
+}
+
+.kpi-delta {
+    display: inline-block;
+    margin-top: 0.5rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: rgba(0,230,118,0.12);
+}
+
+/* ── Streamlit native metric override ── */
+[data-testid="metric-container"] {
+    background: var(--bg-card) !important;
+    backdrop-filter: blur(12px) !important;
+    border: 1px solid var(--border-glass) !important;
+    border-radius: var(--radius) !important;
+    padding: 1.2rem 1.5rem !important;
+    transition: var(--transition) !important;
+}
+
+[data-testid="metric-container"]:hover {
+    border-color: rgba(124,58,237,0.45) !important;
+    box-shadow: var(--glow-purple) !important;
+    transform: translateY(-3px) !important;
+}
+
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    font-size: 2rem !important;
+    font-weight: 700 !important;
+    color: var(--text-primary) !important;
+}
+
+[data-testid="metric-container"] [data-testid="stMetricLabel"] {
+    font-size: 0.78rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+    color: var(--text-muted) !important;
+}
+
+[data-testid="metric-container"] [data-testid="stMetricDelta"] {
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+}
+
+/* ── Plotly Chart Container ── */
+[data-testid="stPlotlyChart"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-glass) !important;
+    border-radius: var(--radius) !important;
+    padding: 0.5rem !important;
+    transition: var(--transition) !important;
+    animation: fadeInUp 0.7s cubic-bezier(0.4,0,0.2,1) both;
+}
+
+[data-testid="stPlotlyChart"]:hover {
+    border-color: rgba(6,182,212,0.4) !important;
+    box-shadow: var(--glow-cyan) !important;
+}
+
+/* ── DataFrame / Table ── */
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--border-glass) !important;
+    border-radius: var(--radius) !important;
+    overflow: hidden !important;
+    animation: fadeInUp 0.8s cubic-bezier(0.4,0,0.2,1) both;
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    background: linear-gradient(135deg, var(--accent) 0%, #5b21b6 100%) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-family: 'Inter', sans-serif !important;
+    letter-spacing: 0.03em !important;
+    transition: var(--transition) !important;
+    box-shadow: 0 4px 15px rgba(124,58,237,0.3) !important;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px) scale(1.02) !important;
+    box-shadow: 0 8px 25px rgba(124,58,237,0.5) !important;
+}
+
+.stButton > button:active {
+    transform: translateY(0) scale(0.98) !important;
+}
+
+/* ── Select / Input ── */
+.stSelectbox > div > div,
+.stMultiSelect > div > div,
+.stTextInput > div > div > input,
+.stNumberInput > div > div > input {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid var(--border-glass) !important;
+    border-radius: 8px !important;
+    color: var(--text-primary) !important;
+    transition: var(--transition) !important;
+}
+
+.stSelectbox > div > div:focus-within,
+.stTextInput > div > div > input:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px rgba(124,58,237,0.2) !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: rgba(255,255,255,0.03) !important;
+    border-radius: 10px !important;
+    padding: 4px !important;
+    gap: 4px !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px !important;
+    color: var(--text-muted) !important;
+    font-weight: 500 !important;
+    transition: var(--transition) !important;
+}
+
+.stTabs [aria-selected="true"] {
+    background: var(--accent) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(124,58,237,0.4) !important;
+}
+
+/* ── Expander ── */
+.streamlit-expanderHeader {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-glass) !important;
+    border-radius: var(--radius) !important;
+    color: var(--text-primary) !important;
+    font-weight: 500 !important;
+    transition: var(--transition) !important;
+}
+
+.streamlit-expanderHeader:hover {
+    border-color: rgba(124,58,237,0.4) !important;
+    box-shadow: var(--glow-purple) !important;
+}
+
+/* ── Section Header ── */
+.section-header {
+    margin-bottom: 1.5rem;
+}
+
+.section-title {
+    font-size: 1.6rem !important;
+    font-weight: 700 !important;
+    color: var(--text-primary) !important;
+    margin-bottom: 0.3rem !important;
+    letter-spacing: -0.02em !important;
+}
+
+.section-subtitle {
+    color: var(--text-muted) !important;
+    font-size: 0.9rem !important;
+    margin-bottom: 0.8rem !important;
+}
+
+.section-divider {
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 50%, transparent 100%);
+    border-radius: 2px;
+    animation: expandWidth 0.8s cubic-bezier(0.4,0,0.2,1) both;
+}
+
+@keyframes expandWidth {
+    from { width: 0; opacity: 0; }
+    to   { width: 100%; opacity: 1; }
+}
+
+/* ── Skeleton Loader ── */
+.skeleton-container {
+    padding: 1rem;
+}
+
+.skeleton-bar {
+    height: 16px;
+    background: linear-gradient(90deg,
+        rgba(255,255,255,0.04) 25%,
+        rgba(255,255,255,0.1) 50%,
+        rgba(255,255,255,0.04) 75%
+    );
+    background-size: 200% 100%;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    animation: shimmer 1.6s infinite;
+}
+
+@keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* ── Fade-in-up utility ── */
+.fade-in-up {
+    animation: fadeInUp 0.6s cubic-bezier(0.4,0,0.2,1) both;
+}
+
+/* ── Staggered children ── */
+.stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger > *:nth-child(2) { animation-delay: 0.10s; }
+.stagger > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger > *:nth-child(4) { animation-delay: 0.20s; }
+.stagger > *:nth-child(5) { animation-delay: 0.25s; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: rgba(124,58,237,0.4);
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.7); }
+
+/* ── Headings ── */
+h1, h2, h3 {
+    color: var(--text-primary) !important;
+    font-family: 'Inter', sans-serif !important;
+    letter-spacing: -0.02em !important;
+}
+
+h1 { font-size: 2.2rem !important; font-weight: 800 !important; }
+h2 { font-size: 1.6rem !important; font-weight: 700 !important; }
+h3 { font-size: 1.2rem !important; font-weight: 600 !important; }
+
+/* ── Divider ── */
+hr {
+    border: none !important;
+    height: 1px !important;
+    background: var(--border-glass) !important;
+    margin: 1.5rem 0 !important;
+}
+
+/* ── Tooltip / Info box ── */
+.stAlert {
+    border-radius: var(--radius) !important;
+    border: 1px solid var(--border-glass) !important;
+    background: var(--bg-card) !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+/* ── Spinner ── */
+.stSpinner > div {
+    border-top-color: var(--accent) !important;
+}
+
+/* ── Particles canvas ── */
+#particles-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.35;
+}
+
+.main .block-container {
+    position: relative;
+    z-index: 1;
+}
+</style>
+"""
+
+
+def _get_particles_js() -> str:
+    return """
+<canvas id="particles-canvas"></canvas>
+<script>
+(function() {
+    const canvas = document.getElementById('particles-canvas');
+    if (!canvas || canvas.dataset.init) return;
+    canvas.dataset.init = true;
+    const ctx = canvas.getContext('2d');
+    let W = window.innerWidth, H = window.innerHeight;
+    canvas.width = W; canvas.height = H;
+
+    const PARTICLE_COUNT = 55;
+    const particles = [];
+
+    function rand(min, max) { return Math.random() * (max - min) + min; }
+
+    class Particle {
+        constructor() { this.reset(); }
+        reset() {
+            this.x = rand(0, W);
+            this.y = rand(0, H);
+            this.r = rand(1, 2.5);
+            this.vx = rand(-0.3, 0.3);
+            this.vy = rand(-0.5, -0.1);
+            this.alpha = rand(0.2, 0.7);
+            this.color = Math.random() > 0.5 ? '124,58,237' : '6,182,212';
+        }
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.alpha -= 0.0008;
+            if (this.y < -10 || this.alpha <= 0) this.reset();
+        }
+        draw() {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(${this.color},${this.alpha})`;
+            ctx.fill();
+        }
+    }
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(new Particle());
+
+    function loop() {
+        ctx.clearRect(0, 0, W, H);
+        particles.forEach(p => { p.update(); p.draw(); });
+        requestAnimationFrame(loop);
+    }
+    loop();
+
+    window.addEventListener('resize', () => {
+        W = window.innerWidth; H = window.innerHeight;
+        canvas.width = W; canvas.height = H;
+    });
+})();
+</script>
+"""
+
+
+def _get_page_transition_js() -> str:
+    return """
+<script>
+(function() {
+    // Smooth page transition on navigation
+    const style = document.createElement('style');
+    style.textContent = `
+        .page-transition-overlay {
+            position: fixed; inset: 0;
+            background: rgba(10,10,26,0.85);
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+        }
+        .page-transition-overlay.active { opacity: 1; pointer-events: all; }
+    `;
+    document.head.appendChild(style);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'page-transition-overlay';
+    document.body.appendChild(overlay);
+
+    // Intercept sidebar nav clicks
+    document.addEventListener('click', function(e) {
+        const link = e.target.closest('a[href]');
+        if (link && link.href && !link.href.startsWith('javascript')) {
+            overlay.classList.add('active');
+            setTimeout(() => overlay.classList.remove('active'), 400);
+        }
+    });
+
+    // Mouse glow effect on cards
+    document.addEventListener('mousemove', function(e) {
+        const cards = document.querySelectorAll('.glass-card, [data-testid="metric-container"]');
+        cards.forEach(card => {
+            const rect = card.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            card.style.setProperty('--mouse-x', x + 'px');
+            card.style.setProperty('--mouse-y', y + 'px');
+        });
+    });
+})();
+</script>
+<style>
+.glass-card::after,
+[data-testid="metric-container"]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+        200px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+        rgba(124,58,237,0.08),
+        transparent 70%
+    );
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+.glass-card:hover::after,
+[data-testid="metric-container"]:hover::after {
+    opacity: 1;
+}
+</style>
+"""
+
 st.set_page_config(
     page_title="Ayush Intelligence Hub",
     page_icon="🛒",
