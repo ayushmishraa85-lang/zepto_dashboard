@@ -13,8 +13,6 @@ from plotly.subplots import make_subplots
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 import warnings, io, os
-from animations import inject_animations
-inject_animations()
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
