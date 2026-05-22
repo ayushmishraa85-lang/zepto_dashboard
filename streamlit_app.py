@@ -15,6 +15,7 @@ from sklearn.linear_model import LinearRegression
 import warnings, io, os
 from animations import inject_animations
 warnings.filterwarnings("ignore")
+inject_animations()
 
 st.set_page_config(
     page_title="Ayush Intelligence Hub",
