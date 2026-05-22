@@ -14,6 +14,12 @@ from scipy import stats
 from sklearn.linear_model import LinearRegression
 import warnings, io, os
 warnings.filterwarnings("ignore")
+from animations import animate_plotly_fig
+
+fig = px.bar(df, x="month", y="sales")
+fig = animate_plotly_fig(fig)   # ← add this one line
+st.plotly_chart(fig)
+
 
 st.set_page_config(
     page_title="Ayush Intelligence Hub",
