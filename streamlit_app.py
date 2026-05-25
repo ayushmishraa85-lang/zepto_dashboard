@@ -1,5 +1,5 @@
 """
-Ayush Sales Intelligence Dashboard — Streamlit Edition
+Zepto Sales Intelligence Dashboard — Streamlit Edition
 Deploy FREE at: https://streamlit.io/cloud
 Developed by Ayush Mishra
 """
@@ -834,3 +834,4 @@ if auto_refresh:
     import time
     time.sleep(30)
     st.rerun()
+
