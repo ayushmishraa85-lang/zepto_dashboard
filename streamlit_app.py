@@ -832,6 +832,6 @@ st.markdown("""
 
 if auto_refresh:
     import time
-    time.sleep(05)
+    time.sleep(10)
     st.rerun()
 
