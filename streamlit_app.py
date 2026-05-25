@@ -1,5 +1,5 @@
 """
-Zepto Sales Intelligence Dashboard — Streamlit Edition
+Ayush Sales Intelligence Dashboard — Streamlit Edition
 Deploy FREE at: https://streamlit.io/cloud
 Developed by Ayush Mishra
 """
