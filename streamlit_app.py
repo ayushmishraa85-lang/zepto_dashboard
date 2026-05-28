@@ -329,18 +329,20 @@ def generate_exec_insights(df):
 # BLINKBOT — Claude API powered
 # ═══════════════════════════════════════════════════════════════════════════════
 def get_api_key():
-    """Retrieve API key from Streamlit secrets, env var, or sidebar input."""
-    # 1. Streamlit Cloud secrets (recommended for deployment)
+    """Retrieve API key — strips whitespace to prevent invalid key errors."""
+    # 1. Streamlit Cloud secrets
     try:
-        return st.secrets["ANTHROPIC_API_KEY"]
+        key = st.secrets["ANTHROPIC_API_KEY"]
+        if key: return key.strip()
     except Exception:
         pass
-    # 2. Environment variable (local dev)
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if key:
-        return key
-    # 3. Sidebar manual entry (fallback)
-    return st.session_state.get("user_api_key", "")
+    # 2. Environment variable
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if key: return key
+    # 3. Sidebar input (session state)
+    key = st.session_state.get("user_api_key", "").strip()
+    if key: return key
+    return ""
 
 def call_claude_api(messages, system_prompt):
     """Call Claude claude-sonnet-4-20250514 via Anthropic API."""
@@ -482,8 +484,12 @@ with st.sidebar:
             help="Get your key at console.anthropic.com. For permanent setup add it to Streamlit Secrets."
         )
         if _key_input:
-            st.session_state["user_api_key"] = _key_input
-            st.success("✅ Key saved for this session")
+            _clean_key = _key_input.strip()
+            if _clean_key.startswith("sk-ant-"):
+                st.session_state["user_api_key"] = _clean_key
+                st.success("✅ Key saved for this session")
+            elif _clean_key:
+                st.error("❌ Key should start with `sk-ant-` — check for typos")
         elif not st.session_state.get("user_api_key"):
             st.caption("🔑 Enter key above to enable BlinkBot")
     else:
@@ -1032,7 +1038,14 @@ with tab_ai:
 # TAB 6 — BLINKBOT (Claude-powered)
 # ════════════════════════════════════════
 with tab_bot:
-    st.markdown("""
+    _active_key = get_api_key()
+    _key_ok = bool(_active_key and _active_key.startswith("sk-ant-") and len(_active_key) > 20)
+    _key_display = f"...{_active_key[-6:]}" if _active_key else "Not set"
+    _status_color = "#34d399" if _key_ok else "#f87171"
+    _status_dot   = "●" if _key_ok else "✗"
+    _status_label = f"API key: {_key_display}" if _key_ok else "No valid API key — enter in sidebar"
+
+    st.markdown(f"""
     <div style="background:linear-gradient(135deg,#1e1b6e,#312e81);padding:16px 20px;
       border:1px solid rgba(99,102,241,.25);border-radius:16px;margin-bottom:16px;
       display:flex;align-items:center;gap:14px">
@@ -1042,10 +1055,18 @@ with tab_bot:
         <div style="font-size:15px;font-weight:700;color:#f0f4ff">BlinkBot</div>
         <div style="font-size:11px;color:#a5b4fc">Senior AI Business Analyst · Powered by Claude · Context-aware</div>
       </div>
-      <div style="margin-left:auto;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);
-        border-radius:20px;padding:4px 12px;font-size:10px;color:#34d399">● Analyzing {len(df):,} records</div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);
+          border-radius:20px;padding:4px 12px;font-size:10px;color:#34d399;margin-bottom:4px">
+          ● Analyzing {len(df):,} records
+        </div>
+        <div style="font-size:10px;color:{_status_color}">{_status_dot} {_status_label}</div>
+      </div>
     </div>
-    """.replace("{len(df):,}", f"{len(df):,}"), unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
+    if not _key_ok:
+        st.warning("⚠️ **BlinkBot needs an API key.** Enter your Anthropic API key in the sidebar under **🤖 BlinkBot API Key**. Get one free at [console.anthropic.com](https://console.anthropic.com).", icon="🔑")
 
     # Init chat
     if "bb_history" not in st.session_state:
