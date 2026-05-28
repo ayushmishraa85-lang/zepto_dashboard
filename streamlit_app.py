@@ -328,8 +328,28 @@ def generate_exec_insights(df):
 # ═══════════════════════════════════════════════════════════════════════════════
 # BLINKBOT — Claude API powered
 # ═══════════════════════════════════════════════════════════════════════════════
+def get_api_key():
+    """Retrieve API key from Streamlit secrets, env var, or sidebar input."""
+    # 1. Streamlit Cloud secrets (recommended for deployment)
+    try:
+        return st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        pass
+    # 2. Environment variable (local dev)
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if key:
+        return key
+    # 3. Sidebar manual entry (fallback)
+    return st.session_state.get("user_api_key", "")
+
 def call_claude_api(messages, system_prompt):
     """Call Claude claude-sonnet-4-20250514 via Anthropic API."""
+    api_key = get_api_key()
+    if not api_key:
+        return ("⚠️ **No API key found.** Please add your Anthropic API key using one of these methods:\n\n"
+                "1. **Streamlit Cloud** → App Settings → Secrets → add `ANTHROPIC_API_KEY = \"sk-ant-...\"` \n"
+                "2. **Local** → set env var `export ANTHROPIC_API_KEY=sk-ant-...` \n"
+                "3. **Quick test** → enter your key in the sidebar field above")
     try:
         # Ensure conversation starts with user role (Claude API requirement)
         clean_messages = []
@@ -337,9 +357,7 @@ def call_claude_api(messages, system_prompt):
             if not clean_messages or clean_messages[-1]["role"] != m["role"]:
                 clean_messages.append(m)
             else:
-                # Merge consecutive same-role messages
                 clean_messages[-1]["content"] += "\n" + m["content"]
-        # Must start with user
         if not clean_messages or clean_messages[0]["role"] != "user":
             clean_messages = [{"role": "user", "content": "Hello"}] + clean_messages
 
@@ -348,6 +366,7 @@ def call_claude_api(messages, system_prompt):
             headers={
                 "Content-Type": "application/json",
                 "anthropic-version": "2023-06-01",
+                "x-api-key": api_key,
             },
             json={
                 "model": "claude-sonnet-4-20250514",
@@ -449,6 +468,27 @@ with st.sidebar:
     search   = st.text_input("Search product", placeholder="e.g. Maggi...")
 
     st.markdown("---")
+    st.markdown("#### 🤖 BlinkBot API Key")
+    # Show key input only if not already configured via secrets or env
+    try:
+        _has_secret = bool(st.secrets.get("ANTHROPIC_API_KEY", ""))
+    except Exception:
+        _has_secret = bool(os.environ.get("ANTHROPIC_API_KEY", ""))
+    if not _has_secret:
+        _key_input = st.text_input(
+            "Anthropic API Key",
+            type="password",
+            placeholder="sk-ant-...",
+            help="Get your key at console.anthropic.com. For permanent setup add it to Streamlit Secrets."
+        )
+        if _key_input:
+            st.session_state["user_api_key"] = _key_input
+            st.success("✅ Key saved for this session")
+        elif not st.session_state.get("user_api_key"):
+            st.caption("🔑 Enter key above to enable BlinkBot")
+    else:
+        st.success("✅ API key configured")
+
     st.markdown("#### ⚙️ Settings")
     show_raw   = st.checkbox("Show Raw Data Table", value=False)
     show_stats = st.checkbox("Statistical Analysis",  value=True)
