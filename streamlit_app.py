@@ -1,5 +1,5 @@
 """
-Ayush Sales Intelligence Dashboard v3.0
+Zepto Sales Intelligence Dashboard v3.0
 Developed by Ayush Mishra
 Improvements: Modular tabs, real KPIs, Claude API chatbot, executive summary,
               data validation, caching, labeled simulations, clean architecture
@@ -331,21 +331,39 @@ def generate_exec_insights(df):
 def call_claude_api(messages, system_prompt):
     """Call Claude claude-sonnet-4-20250514 via Anthropic API."""
     try:
+        # Ensure conversation starts with user role (Claude API requirement)
+        clean_messages = []
+        for m in messages:
+            if not clean_messages or clean_messages[-1]["role"] != m["role"]:
+                clean_messages.append(m)
+            else:
+                # Merge consecutive same-role messages
+                clean_messages[-1]["content"] += "\n" + m["content"]
+        # Must start with user
+        if not clean_messages or clean_messages[0]["role"] != "user":
+            clean_messages = [{"role": "user", "content": "Hello"}] + clean_messages
+
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+            },
             json={
                 "model": "claude-sonnet-4-20250514",
                 "max_tokens": 1000,
                 "system": system_prompt,
-                "messages": messages
+                "messages": clean_messages
             },
             timeout=30
         )
         data = resp.json()
-        if "content" in data:
+        if "content" in data and len(data["content"]) > 0:
             return data["content"][0]["text"]
-        return f"API error: {data.get('error', {}).get('message', 'Unknown error')}"
+        err_msg = data.get("error", {}).get("message", str(data))
+        return f"⚠️ API error: {err_msg}"
+    except requests.exceptions.Timeout:
+        return "⚠️ Request timed out. Please try again."
     except Exception as e:
         return f"⚠️ Connection error: {str(e)}"
 
@@ -1032,10 +1050,21 @@ with tab_bot:
         # Build Claude context
         system_prompt = build_data_context(df)
         # Maintain conversation history for Claude (last 10 turns)
+        # Build API messages: only user+assistant alternating turns, skip the initial bot greeting
         api_messages = []
         for m in st.session_state.bb_history[-10:]:
             role = "user" if m["role"] == "user" else "assistant"
-            api_messages.append({"role": role, "content": m["msg"]})
+            # Skip leading assistant messages (Claude API requires first message to be user)
+            if not api_messages and role == "assistant":
+                continue
+            # Avoid consecutive same-role messages
+            if api_messages and api_messages[-1]["role"] == role:
+                api_messages[-1]["content"] += "\n" + m["msg"]
+            else:
+                api_messages.append({"role": role, "content": m["msg"]})
+        # Safety: must have at least one user message
+        if not api_messages:
+            api_messages = [{"role": "user", "content": question}]
 
         with st.spinner("BlinkBot is analyzing..."):
             response = call_claude_api(api_messages, system_prompt)
@@ -1059,11 +1088,20 @@ if show_raw:
     display_cols = ["Product Name","Category","City","Original Price","Current Price",
                     "Discount","Orders","Total Revenue","Profit","Profit Margin","AOV","Influencer Active"]
     show_df = df[[c for c in display_cols if c in df.columns]].copy()
-    show_df["Profit Margin"] = show_df["Profit Margin"].round(1).astype(str) + "%"
-    show_df["AOV"] = show_df["AOV"].round(0).astype(int)
-    st.dataframe(show_df.style.format({"Total Revenue":"₹{:,.0f}", "Profit":"₹{:,.0f}",
-                                        "Original Price":"₹{:.0f}", "Current Price":"₹{:.0f}"}),
-                 use_container_width=True, height=400)
+    # Safe formatting that works on large datasets (avoids StreamlitAPIException with .style on 100k+ rows)
+    for col in ["Total Revenue", "Profit"]:
+        if col in show_df.columns:
+            show_df[col] = show_df[col].apply(lambda x: f"\u20b9{x:,.0f}" if pd.notna(x) else "\u2014")
+    for col in ["Original Price", "Current Price"]:
+        if col in show_df.columns:
+            show_df[col] = show_df[col].apply(lambda x: f"\u20b9{x:.0f}" if pd.notna(x) else "\u2014")
+    if "Profit Margin" in show_df.columns:
+        show_df["Profit Margin"] = show_df["Profit Margin"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "\u2014")
+    if "AOV" in show_df.columns:
+        show_df["AOV"] = show_df["AOV"].apply(lambda x: f"\u20b9{x:,.0f}" if pd.notna(x) else "\u2014")
+    if "Discount" in show_df.columns:
+        show_df["Discount"] = show_df["Discount"].apply(lambda x: f"{x:.0f}%" if pd.notna(x) else "\u2014")
+    st.dataframe(show_df, use_container_width=True, height=400)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FOOTER
