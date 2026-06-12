@@ -1,6 +1,6 @@
 """
 Zepto Sales Intelligence Dashboard — Streamlit Edition
-Phase 1 Refactor: Separated calculation logic from rendering
+Phase 2: Multi-turn memory, entity resolution & rich response formatting
 Developed by Ayush Mishra
 """
 
@@ -576,8 +576,209 @@ def compute_ai_insights(df: pd.DataFrame, kpis: dict, inf: dict) -> list[tuple]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# ── BLINKBOT — RESPONSE LOGIC  (dispatch-table pattern)
+# ── PHASE 2 — MULTI-TURN MEMORY & RICH RESPONSE FORMATTING
 # ══════════════════════════════════════════════════════════════════════════════════
+
+# ── 1. ConversationMemory ─────────────────────────────────────────────────────────
+
+class ConversationMemory:
+    """
+    Tracks the conversational context between BlinkBot turns.
+    Stored in st.session_state so it persists across reruns.
+
+    Fields
+    ------
+    last_intent   : most recent topic (revenue / profit / city / product / ...)
+    last_city     : last city explicitly mentioned or answered about
+    last_product  : last product explicitly mentioned or answered about
+    last_category : last category explicitly mentioned or answered about
+    turn_count    : total Q&A turns so far
+    intent_stack  : rolling list of the last 3 intents (for follow-up context)
+    """
+
+    def __init__(self):
+        self.last_intent   : str | None = None
+        self.last_city     : str | None = None
+        self.last_product  : str | None = None
+        self.last_category : str | None = None
+        self.turn_count    : int        = 0
+        self.intent_stack  : list[str]  = []
+
+    def update(self, intent: str, city=None, product=None, category=None):
+        self.last_intent = intent
+        if city:     self.last_city     = city
+        if product:  self.last_product  = product
+        if category: self.last_category = category
+        self.turn_count += 1
+        self.intent_stack = (self.intent_stack + [intent])[-3:]   # keep last 3
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items()}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ConversationMemory":
+        m = cls()
+        for k, v in d.items():
+            setattr(m, k, v)
+        return m
+
+
+def _get_memory() -> ConversationMemory:
+    """Retrieve or create the ConversationMemory from session state."""
+    if "bb_memory" not in st.session_state:
+        st.session_state.bb_memory = ConversationMemory().to_dict()
+    return ConversationMemory.from_dict(st.session_state.bb_memory)
+
+
+def _save_memory(mem: ConversationMemory):
+    st.session_state.bb_memory = mem.to_dict()
+
+
+# ── 2. Entity Extraction ──────────────────────────────────────────────────────────
+
+def extract_entities(question: str, df: pd.DataFrame) -> dict:
+    """
+    Scan the raw question for known city / product / category names.
+    Returns {'city': str|None, 'product': str|None, 'category': str|None}.
+    """
+    q_low = question.lower()
+    found = dict(city=None, product=None, category=None)
+
+    for city in df["City"].unique():
+        if city.lower() in q_low:
+            found["city"] = city
+            break
+
+    for cat in df["Category"].unique():
+        if cat.lower() in q_low:
+            found["category"] = cat
+            break
+
+    for prod in df["Product Name"].unique():
+        if prod.lower() in q_low:
+            found["product"] = prod
+            break
+
+    return found
+
+
+def resolve_references(question: str, mem: ConversationMemory) -> str:
+    """
+    Replace vague pronouns / references with the entity from memory.
+
+    Examples
+    --------
+    'tell me more about it'   → last topic
+    'what about that city?'   → last_city
+    'how does that product do' → last_product
+    'compare with the other'   → last_city / last_category
+    """
+    q = question.lower().strip()
+
+    # Pronoun → city
+    city_refs = ["that city", "that region", "that location", "there", "that place"]
+    if any(ref in q for ref in city_refs) and mem.last_city:
+        q = q.replace("that city", mem.last_city) \
+              .replace("that region", mem.last_city) \
+              .replace("that location", mem.last_city) \
+              .replace("there", mem.last_city) \
+              .replace("that place", mem.last_city)
+
+    # Pronoun → product
+    prod_refs = ["that product", "it", "that item", "the same product", "that one"]
+    if any(ref in q for ref in prod_refs) and mem.last_product:
+        for ref in prod_refs:
+            q = q.replace(ref, mem.last_product)
+
+    # Pronoun → category
+    cat_refs = ["that category", "that segment", "that section"]
+    if any(ref in q for ref in cat_refs) and mem.last_category:
+        for ref in cat_refs:
+            q = q.replace(ref, mem.last_category)
+
+    # "tell me more" / "expand" → re-state last intent
+    more_refs = ["tell me more", "more details", "expand", "elaborate", "explain more", "go deeper"]
+    if any(ref in q for ref in more_refs) and mem.last_intent:
+        q = mem.last_intent   # treat as if they re-asked the last intent keyword
+
+    # "why" → add context of last topic
+    if q.strip() in ("why", "why?", "how come") and mem.last_intent:
+        q = f"explain {mem.last_intent}"
+
+    return q
+
+
+# ── 3. ResponseBuilder — consistent rich formatting ───────────────────────────────
+
+class ResponseBuilder:
+    """
+    Fluent builder that assembles a Markdown response with a consistent structure:
+      [direct answer] → [metrics table] → [context row] → [recommendation]
+
+    Usage
+    -----
+    ResponseBuilder("📊", "Revenue Overview") \\
+        .answer("Total revenue is **₹12.3L**") \\
+        .metric("Best category", "Snacks", "🏆") \\
+        .metric("Profit margin", "18.4%", "📈") \\
+        .context("Previous week was ₹10.1L — that's a 21% jump.") \\
+        .tip("Double down on Snacks in Delhi for maximum ROI.") \\
+        .build()
+    """
+
+    def __init__(self, emoji: str, title: str):
+        self._emoji   = emoji
+        self._title   = title
+        self._answer  : str        = ""
+        self._metrics : list[tuple]= []   # (label, value, icon)
+        self._context : str        = ""
+        self._tip     : str        = ""
+        self._followup: str        = ""
+
+    def answer(self, text: str) -> "ResponseBuilder":
+        self._answer = text
+        return self
+
+    def metric(self, label: str, value: str, icon: str = "▸") -> "ResponseBuilder":
+        self._metrics.append((label, value, icon))
+        return self
+
+    def context(self, text: str) -> "ResponseBuilder":
+        self._context = text
+        return self
+
+    def tip(self, text: str) -> "ResponseBuilder":
+        self._tip = text
+        return self
+
+    def followup(self, text: str) -> "ResponseBuilder":
+        self._followup = text
+        return self
+
+    def build(self) -> str:
+        parts = [f"**{self._emoji} {self._title}**\n"]
+
+        if self._answer:
+            parts.append(self._answer + "\n")
+
+        if self._metrics:
+            parts.append("")
+            for label, value, icon in self._metrics:
+                parts.append(f"{icon} **{label}:** {value}")
+
+        if self._context:
+            parts.append(f"\n💬 *{self._context}*")
+
+        if self._tip:
+            parts.append(f"\n💡 **Recommendation:** {self._tip}")
+
+        if self._followup:
+            parts.append(f"\n🔍 *You can also ask: {self._followup}*")
+
+        return "\n".join(parts)
+
+
+# ── 4. Data context (unchanged from Phase 1) ─────────────────────────────────────
 
 def _bb_context(df: pd.DataFrame) -> dict:
     """Pre-compute all values BlinkBot might need (called once per query)."""
@@ -604,222 +805,321 @@ def _bb_context(df: pd.DataFrame) -> dict:
                 n_inf_y=len(df[df["Influencer Active"]=="Yes"]) if "Influencer Active" in df.columns else 0)
 
 
-def _bb_greeting(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_greeting(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["hello","hi","hey","namaste","hii"]): return None
-    c = ctx
+    c        = ctx
+    returning = mem.turn_count > 0
+    opener   = (f"Welcome back! You've asked **{mem.turn_count}** question(s) so far."
+                if returning else f"I've analyzed **{len(df):,} records** and I'm ready to help.")
+    mem.update("greeting")
     return (
-        f"👋 **Hi! I'm BlinkBot**, your AI Business Analyst. I've analyzed **{len(df):,} records**.\n\n"
-        f"- 💰 Total Revenue: **{fmt(c['total_r'])}**\n"
-        f"- 🏆 Top Category: **{c['cat_r'].index[0] if c['cat_r'] is not None else 'N/A'}**\n"
-        f"- 📍 Top City: **{c['city_r'].index[0] if c['city_r'] is not None else 'N/A'}**\n\n"
-        f"Ask me anything!"
+        ResponseBuilder("👋", "Hi! I'm BlinkBot — your AI Business Analyst")
+        .answer(opener)
+        .metric("Total Revenue", fmt(c["total_r"]), "💰")
+        .metric("Top Category",  c["cat_r"].index[0]  if c["cat_r"]  is not None else "N/A", "🏆")
+        .metric("Top City",      c["city_r"].index[0] if c["city_r"] is not None else "N/A", "📍")
+        .metric("Total Orders",  f"{int(c['total_o']):,}", "🛒")
+        .followup("'Give me a full summary' · 'Which city is weakest?' · 'Best product?'")
+        .build()
     )
 
 
-def _bb_summary(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_summary(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["summary","overview","analyze","brief","insights","tell me"]): return None
     c = ctx
+    aov = c["total_r"] / c["total_o"] if c["total_o"] else 0
+    weakest = c["city_r"].index[-1] if c["city_r"] is not None else "N/A"
+    mem.update("summary",
+               city     = c["city_r"].index[0]  if c["city_r"]  is not None else None,
+               product  = c["prod_r"].index[0]  if c["prod_r"]  is not None else None,
+               category = c["cat_r"].index[0]   if c["cat_r"]   is not None else None)
     return (
-        f"**📋 Executive Summary:**\n\n"
-        f"**Revenue & Profit:**\n"
-        f"- 💰 Total Revenue: **{fmt(c['total_r'])}** | Profit: **{fmt(c['total_p'])}** ({c['mgn']:.1f}% margin)\n"
-        f"- 🛒 Total Orders: **{int(c['total_o']):,}** | Avg Order Value: **{fmt(c['total_r']/c['total_o'] if c['total_o'] else 0)}**\n\n"
-        f"**Top Performers:**\n"
-        f"- 🏆 Best Category: **{c['cat_r'].index[0] if c['cat_r'] is not None else 'N/A'}** "
-        f"({c['cat_r'].iloc[0]/c['total_r']*100:.1f}% of revenue)\n"
-        f"- 📍 Best City: **{c['city_r'].index[0] if c['city_r'] is not None else 'N/A'}** "
-        f"({fmt(c['city_r'].iloc[0]) if c['city_r'] is not None else 'N/A'})\n"
-        f"- ⭐ Best Product: **{c['prod_r'].index[0] if c['prod_r'] is not None else 'N/A'}**\n\n"
-        f"**⚠️ Alert:** {c['city_r'].index[-1] if c['city_r'] is not None else 'N/A'} is your weakest region.\n\n"
-        f"**💡 Recommendation:** Focus on {c['cat_r'].index[0] if c['cat_r'] is not None else 'your top category'} "
-        f"in {c['city_r'].index[0] if c['city_r'] is not None else 'your top city'} — this is your growth engine."
+        ResponseBuilder("📋", "Executive Summary")
+        .answer(f"Here's everything at a glance across **{len(df):,} records**.")
+        .metric("Total Revenue",  fmt(c["total_r"]),  "💰")
+        .metric("Total Profit",   f"{fmt(c['total_p'])} ({c['mgn']:.1f}% margin)", "📈")
+        .metric("Total Orders",   f"{int(c['total_o']):,} | AOV: {fmt(aov)}", "🛒")
+        .metric("Best Category",  f"{c['cat_r'].index[0] if c['cat_r'] is not None else 'N/A'} "
+                                  f"({c['cat_r'].iloc[0]/c['total_r']*100:.1f}% of rev)", "🏆")
+        .metric("Best City",      f"{c['city_r'].index[0] if c['city_r'] is not None else 'N/A'} "
+                                  f"— {fmt(c['city_r'].iloc[0]) if c['city_r'] is not None else 'N/A'}", "📍")
+        .metric("Best Product",   c["prod_r"].index[0] if c["prod_r"] is not None else "N/A", "⭐")
+        .context(f"⚠️ **{weakest}** is your weakest region — investigate and run targeted promotions.")
+        .tip(f"Focus on {c['cat_r'].index[0] if c['cat_r'] is not None else 'top category'} "
+             f"in {c['city_r'].index[0] if c['city_r'] is not None else 'top city'} — this is your growth engine.")
+        .followup(f"'Tell me about {weakest}' · 'Why is {weakest} underperforming?' · 'Breakdown by category'")
+        .build()
     )
 
 
-def _bb_revenue(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_revenue(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["revenue","how much","earnings","sales total"]): return None
-    c = ctx
-    return (
-        f"**📊 Direct Answer:**\nTotal revenue is **{fmt(c['total_r'])}** across **{len(df):,} transactions**.\n\n"
-        f"**📈 Core Metrics:**\n"
-        f"- 🏆 Best category: **{c['cat_r'].index[0] if c['cat_r'] is not None else 'N/A'}** "
-        f"({c['cat_r'].iloc[0]/c['total_r']*100:.1f}%)\n"
-        f"- 📍 Top city: **{c['city_r'].index[0] if c['city_r'] is not None else 'N/A'}**\n"
-        f"- 💰 Profit: **{fmt(c['total_p'])}** ({c['mgn']:.1f}% margin)\n\n"
-        f"**💡 Recommendation:** Double down on **{c['cat_r'].index[0] if c['cat_r'] is not None else 'top category'}** "
-        f"in **{c['city_r'].index[0] if c['city_r'] is not None else 'top city'}** "
-        f"— allocate 30% more marketing budget here."
+    c       = ctx
+    top_cat = c["cat_r"].index[0] if c["cat_r"] is not None else "N/A"
+    top_city= c["city_r"].index[0] if c["city_r"] is not None else "N/A"
+    # Check if user asked about a specific city from memory
+    target_city = mem.last_city
+    extra_ctx   = ""
+    if target_city and target_city in df["City"].values:
+        city_rev_val = df[df["City"]==target_city]["Total Revenue"].sum()
+        share        = city_rev_val / c["total_r"] * 100 if c["total_r"] else 0
+        extra_ctx    = f"{target_city} contributes **{fmt(city_rev_val)}** ({share:.1f}% of total)."
+    mem.update("revenue", category=top_cat, city=top_city)
+    rb = (
+        ResponseBuilder("📊", "Revenue Analysis")
+        .answer(f"Total revenue is **{fmt(c['total_r'])}** across **{len(df):,} transactions**.")
+        .metric("Best category", f"{top_cat} ({c['cat_r'].iloc[0]/c['total_r']*100:.1f}%)" if c["cat_r"] is not None else "N/A", "🏆")
+        .metric("Top city",      top_city,             "📍")
+        .metric("Net profit",    f"{fmt(c['total_p'])} ({c['mgn']:.1f}% margin)", "💰")
+        .metric("Avg order value",fmt(c["total_r"]/c["total_o"] if c["total_o"] else 0), "🛒")
     )
+    if extra_ctx: rb = rb.context(extra_ctx)
+    rb = rb.tip(f"Double down on **{top_cat}** in **{top_city}** — allocate 30% more marketing budget here.")
+    rb = rb.followup("'Break down by category' · 'Which product earns most?' · 'Compare cities'")
+    return rb.build()
 
 
-def _bb_profit(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_profit(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["profit","margin","net"]): return None
-    c = ctx
+    c  = ctx
     bm = c["best_m"]
-    return (
-        f"**💰 Direct Answer:**\nTotal profit is **{fmt(c['total_p'])}** with margin of **{c['mgn']:.1f}%**.\n\n"
-        f"**📈 Core Metrics:**\n"
-        f"- 🏆 Highest margin: **{bm.index[0] if bm is not None else 'N/A'}** "
-        f"({f'{bm.iloc[0]:.1f}%' if bm is not None else 'N/A'})\n"
-        f"- ⚠️ Lowest margin: **{bm.index[-1] if bm is not None else 'N/A'}** — needs review\n"
-        f"- Every ₹100 earned = ₹{c['mgn']:.0f} kept\n\n"
-        f"**💡 Recommendation:** Grow **{bm.index[0] if bm is not None else 'top category'}** volume "
-        f"— it gives the best return."
+    prev_topic = mem.last_intent
+    mem.update("profit", category=bm.index[0] if bm is not None else None)
+    rb = (
+        ResponseBuilder("💰", "Profit & Margin Analysis")
+        .answer(f"Total profit is **{fmt(c['total_p'])}** on revenue of **{fmt(c['total_r'])}**.")
+        .metric("Profit margin",     f"{c['mgn']:.1f}%",  "📈")
+        .metric("Highest-margin cat",f"{bm.index[0] if bm is not None else 'N/A'} ({bm.iloc[0]:.1f}%)" if bm is not None else "N/A", "🏆")
+        .metric("Lowest-margin cat", f"{bm.index[-1] if bm is not None else 'N/A'} — needs review" if bm is not None else "N/A", "⚠️")
+        .metric("Keep per ₹100",     f"₹{c['mgn']:.0f}", "🪙")
     )
+    if prev_topic == "revenue":
+        rb = rb.context("You were just looking at revenue — profit margin tells you how much of that you actually keep.")
+    rb = rb.tip(f"Grow **{bm.index[0] if bm is not None else 'top category'}** volume — it gives the best return per rupee sold.")
+    rb = rb.followup("'Which product has best margin?' · 'How can I improve margin?' · 'Revenue breakdown'")
+    return rb.build()
 
 
-def _bb_best_product(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_best_product(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["best product","top product","number one","highest selling"]): return None
     pr = ctx["prod_r"]
     if pr is None: return "Product data not available."
-    top3 = pr.head(3)
-    lines = "\n".join([
-        f"{['🥇','🥈','🥉'][i]} **{top3.index[i]}** — {fmt(top3.iloc[i])}"
-        for i in range(len(top3))
-    ])
+    top3   = pr.head(3)
+    medals = ["🥇","🥈","🥉"]
+    lines  = "\n".join([f"{medals[i]} **{top3.index[i]}** — {fmt(top3.iloc[i])}" for i in range(len(top3))])
+    mem.update("best_product", product=top3.index[0])
     return (
-        f"**🏆 Direct Answer:**\nYour #1 product is **{top3.index[0]}** generating **{fmt(top3.iloc[0])}**.\n\n"
-        f"{lines}\n\n"
-        f"**💡 Recommendation:** Keep **{top3.index[0]}** always in stock. "
-        f"Bundle with #2 and #3 to boost average order value."
+        ResponseBuilder("🏆", "Top Products by Revenue")
+        .answer(f"Your #1 product is **{top3.index[0]}** generating **{fmt(top3.iloc[0])}**.")
+        .answer(f"\n{lines}")
+        .metric("Share of total revenue", f"{top3.iloc[0]/ctx['total_r']*100:.1f}%", "📊")
+        .metric("Runner-up gap",  fmt(top3.iloc[0]-top3.iloc[1]) if len(top3)>1 else "—", "↔️")
+        .tip(f"Keep **{top3.index[0]}** always in stock. Bundle with **{top3.index[1] if len(top3)>1 else '#2'}** to boost average order value.")
+        .followup(f"'Tell me more about {top3.index[0]}' · 'Which city sells it most?' · 'Worst products?'")
+        .build()
     )
 
 
-def _bb_worst_product(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_worst_product(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["worst product","lowest","weakest product"]): return None
     pr = ctx["prod_r"]
     if pr is None: return "Product data not available."
     worst = pr.tail(3).sort_values()
-    lines = "\n".join([
-        f"{['🔴','🟡','🟡'][i]} **{worst.index[i]}**"
-        for i in range(len(worst))
-    ])
+    lines = "\n".join([f"{['🔴','🟡','🟡'][i]} **{worst.index[i]}** — {fmt(worst.iloc[i])}" for i in range(len(worst))])
+    mem.update("worst_product", product=worst.index[0])
     return (
-        f"**⚠️ Underperforming Products:**\n"
-        f"Lowest revenue: **{worst.index[0]}** at only **{fmt(worst.iloc[0])}**.\n\n"
-        f"{lines}\n\n"
-        f"**💡 Recommendation:** Run a 30-day promotion on these. "
-        f"If no improvement, discontinue the lowest one."
+        ResponseBuilder("⚠️", "Underperforming Products")
+        .answer(f"Lowest revenue: **{worst.index[0]}** at only **{fmt(worst.iloc[0])}**.\n\n{lines}")
+        .metric("Gap to #1 product", fmt(ctx["prod_r"].iloc[0] - worst.iloc[0]), "↕️")
+        .tip("Run a 30-day promotion on these. If no improvement in 2 weeks, discontinue the lowest performer.")
+        .followup(f"'Why is {worst.index[0]} underperforming?' · 'Compare with best product' · 'Category breakdown'")
+        .build()
     )
 
 
-def _bb_city(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_city(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["city","region","location","where"]): return None
-    cr = ctx["city_r"]
+    cr     = ctx["city_r"]
     if cr is None: return "City data not found."
+    weakest = cr.index[-1]
+    best    = cr.index[0]
+    gap_pct = ((cr.iloc[0]-cr.iloc[-1])/cr.iloc[-1]*100) if len(cr)>1 and cr.iloc[-1]>0 else 0
     ranking = "\n".join([
         f"{i+1}. {'🟢' if i==0 else '🟡' if i<len(cr)-1 else '🔴'} **{c}** — {fmt(v)}"
         for i,(c,v) in enumerate(cr.items())
     ])
-    gap = ((cr.iloc[0]-cr.iloc[-1])/cr.iloc[-1]*100) if len(cr)>1 and cr.iloc[-1]>0 else 0
-    alert = f"\n\n**⚠️ Alert:** {cr.index[-1]} underperforms by **{gap:.0f}%**!" if gap > 50 else ""
-    return (
-        f"**📍 Direct Answer:**\n**{cr.index[0]}** is your strongest market with **{fmt(cr.iloc[0])}**.\n\n"
-        f"{ranking}{alert}\n\n"
-        f"**💡 Recommendation:** Replicate {cr.index[0]}'s success in {cr.index[-1]} "
-        f"— start with influencer campaigns for top 3 products."
+    # Was a specific city asked about vs memory?
+    prev_city = mem.last_city
+    mem.update("city", city=best)
+    rb = (
+        ResponseBuilder("📍", "City & Region Performance")
+        .answer(f"**{best}** is your strongest market at **{fmt(cr.iloc[0])}**.\n\n{ranking}")
+        .metric("Performance gap", f"{gap_pct:.0f}% between best and worst", "↕️")
     )
+    if prev_city and prev_city != best:
+        prev_val = cr[prev_city] if prev_city in cr.index else 0
+        rb = rb.context(f"You asked about **{prev_city}** earlier — it generates {fmt(prev_val)}, ranked #{list(cr.index).index(prev_city)+1 if prev_city in cr.index else 'N/A'}.")
+    if gap_pct > 50:
+        rb = rb.context(f"⚠️ {weakest} underperforms by **{gap_pct:.0f}%** — this is a major opportunity.")
+    rb = rb.tip(f"Replicate {best}'s success in {weakest} — start with influencer campaigns for top 3 products.")
+    rb = rb.followup(f"'Revenue in {weakest}' · 'Best product in {best}' · 'Category split by city'")
+    return rb.build()
 
 
-def _bb_category(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_category(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["category","segment","best category"]): return None
     cat_r   = ctx["cat_r"]
     total_r = ctx["total_r"]
     if cat_r is None: return "Category data not available."
     medals = ["🥇","🥈","🥉"] + ["▫️"]*(len(cat_r)-3)
-    lines  = "\n".join([
-        f"{medals[i]} **{c}** — {fmt(v)} ({v/total_r*100:.1f}%)"
-        for i,(c,v) in enumerate(cat_r.items())
-    ])
+    lines  = "\n".join([f"{medals[i]} **{c}** — {fmt(v)} ({v/total_r*100:.1f}%)" for i,(c,v) in enumerate(cat_r.items())])
+    weakest = cat_r.index[-1]
+    mem.update("category", category=cat_r.index[0])
     return (
-        f"**🏷️ Direct Answer:**\n**{cat_r.index[0]}** leads with **{fmt(cat_r.iloc[0])}** "
-        f"({cat_r.iloc[0]/total_r*100:.1f}% of total).\n\n"
-        f"{lines}\n\n"
-        f"**💡 Recommendation:** **{cat_r.index[-1]}** is weakest at {cat_r.iloc[-1]/total_r*100:.1f}%. "
-        f"Either promote it or shift budget to **{cat_r.index[0]}**."
+        ResponseBuilder("🏷️", "Category Performance Breakdown")
+        .answer(f"**{cat_r.index[0]}** leads with **{fmt(cat_r.iloc[0])}** ({cat_r.iloc[0]/total_r*100:.1f}% of total).\n\n{lines}")
+        .metric("Categories tracked", str(len(cat_r)), "📂")
+        .metric("Weakest segment",    f"{weakest} ({cat_r.iloc[-1]/total_r*100:.1f}%)", "⚠️")
+        .tip(f"**{weakest}** is weakest at {cat_r.iloc[-1]/total_r*100:.1f}%. Either promote it or shift budget to **{cat_r.index[0]}**.")
+        .followup(f"'Products in {cat_r.index[0]}' · 'Which city buys most {cat_r.index[0]}?' · 'Margin by category'")
+        .build()
     )
 
 
-def _bb_influencer(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_influencer(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["influencer","marketing","campaign"]): return None
     if "Influencer Active" not in df.columns: return "Influencer data not available."
     c = ctx
+    significant = abs(c["inf_lift"]) > 5
+    mem.update("influencer")
     return (
-        f"**⚡ Direct Answer:**\nInfluencer marketing generates **{c['inf_lift']:+.1f}% revenue lift**.\n\n"
-        f"- 💰 With influencer: **{fmt(c['inf_y_rev'])}** avg revenue\n"
-        f"- 💰 Without: **{fmt(c['inf_n_rev'])}** avg revenue\n"
-        f"- 📦 Order lift: **{c['ord_lift']:+.1f}%**\n"
-        f"- 🎯 Active: **{c['n_inf_y']}** of {len(df)} products\n\n"
-        f"**💡 Recommendation:** "
-        f"{'Scale up — activate influencers for ALL top-category products!' if c['inf_lift']>5 else 'Small lift — focus on micro-influencers in specific cities.'}"
+        ResponseBuilder("⚡", "Influencer Marketing Impact")
+        .answer(f"Influencer-active products generate a **{c['inf_lift']:+.1f}% revenue lift**.")
+        .metric("With influencer (avg rev)",    fmt(c["inf_y_rev"]), "✅")
+        .metric("Without influencer (avg rev)", fmt(c["inf_n_rev"]), "❌")
+        .metric("Order volume lift",            f"{c['ord_lift']:+.1f}%", "📦")
+        .metric("Influencer-active SKUs",       f"{c['n_inf_y']} of {len(df)}", "🎯")
+        .context("Lift is statistically meaningful ✓" if significant else "Lift is small — consider running a larger test.")
+        .tip("Scale up — activate influencers for ALL top-category products!" if c["inf_lift"]>5 else "Small lift — focus on micro-influencers in specific cities.")
+        .followup("'Which category benefits most from influencers?' · 'ROI on influencer spend?' · 'Top cities for campaigns?'")
+        .build()
     )
 
 
-def _bb_orders(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_orders(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["orders","order count","volume","how many orders"]): return None
-    c   = ctx
-    aov = c["total_r"] / c["total_o"] if c["total_o"] else 0
+    c      = ctx
+    aov    = c["total_r"] / c["total_o"] if c["total_o"] else 0
     top_co = df.groupby("City")["Orders"].sum().sort_values(ascending=False) if "City" in df.columns else None
+    mem.update("orders", city=top_co.index[0] if top_co is not None else None)
     return (
-        f"**🛒 Direct Answer:**\n**{int(c['total_o']):,} total orders** processed.\n\n"
-        f"- 💰 Average order value: **{fmt(aov)}**\n"
-        f"- 📍 Top city by orders: **{top_co.index[0] if top_co is not None else 'N/A'}** "
-        f"({int(top_co.iloc[0]):,} orders)\n\n"
-        f"**💡 Recommendation:** Increase AOV from **{fmt(aov)}** to **{fmt(aov*1.15)}** "
-        f"with bundle deals. 15% AOV increase = 15% more revenue at zero extra cost."
+        ResponseBuilder("🛒", "Order Volume Analysis")
+        .answer(f"**{int(c['total_o']):,} total orders** have been processed.")
+        .metric("Average order value",   fmt(aov), "💰")
+        .metric("Top city by orders",    f"{top_co.index[0] if top_co is not None else 'N/A'} ({int(top_co.iloc[0]):,})", "📍")
+        .metric("Revenue per order",     fmt(c["total_r"]/c["total_o"] if c["total_o"] else 0), "📊")
+        .metric("Target AOV (+15%)",     fmt(aov*1.15), "🎯")
+        .tip(f"Increase AOV from **{fmt(aov)}** to **{fmt(aov*1.15)}** with bundle deals. 15% AOV lift = 15% more revenue at zero extra cost.")
+        .followup("'Which product has most orders?' · 'Orders by city?' · 'Discount impact on orders?'")
+        .build()
     )
 
 
-def _bb_discount(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_discount(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["discount","offer","deal","promo"]): return None
     dg = ctx["disc_grp"]
     if dg is None: return "Discount data not available."
-    best = dg.loc[dg["avg_rev"].idxmax()]
+    best  = dg.loc[dg["avg_rev"].idxmax()]
     lines = "\n".join([
-        f"- **{int(r.Discount)}%** → Avg Revenue: {fmt(r.avg_rev)} | Orders: {r.avg_orders:.0f}"
+        f"- **{int(r.Discount)}%** → Avg Rev: {fmt(r.avg_rev)} | Avg Orders: {r.avg_orders:.0f}"
         for _, r in dg.iterrows()
     ])
+    mem.update("discount")
     return (
-        f"**🏷️ Direct Answer:**\nMost effective discount: **{int(best['Discount'])}%** "
-        f"generating **{fmt(best['avg_rev'])}** avg revenue.\n\n"
-        f"{lines}\n\n"
-        f"**💡 Recommendation:** Stick to **{int(best['Discount'])}%** as standard promotional rate. "
-        f"Avoid deeper discounts — they train customers to wait for sales."
+        ResponseBuilder("🏷️", "Discount Effectiveness Analysis")
+        .answer(f"Most effective discount: **{int(best['Discount'])}%** generating **{fmt(best['avg_rev'])}** avg revenue.\n\n{lines}")
+        .metric("Sweet-spot discount",  f"{int(best['Discount'])}%", "🎯")
+        .metric("Peak avg revenue",     fmt(best["avg_rev"]), "💰")
+        .metric("Peak avg orders",      f"{best['avg_orders']:.0f}", "🛒")
+        .tip(f"Stick to **{int(best['Discount'])}%** as your standard promotional rate. Avoid deeper discounts — they train customers to wait for sales.")
+        .followup("'Does discount affect profit margin?' · 'Which category discounts best?' · 'Order volume vs discount'")
+        .build()
     )
 
 
-def _bb_inventory(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+def _bb_inventory(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
     if not any(w in q for w in ["stock","inventory","reorder","shortage"]): return None
     pr = ctx["prod_r"]
     if pr is None: return "Product data not available."
     top5  = pr.head(5)
-    items = "\n".join([
-        f"{i+1}. 🔴 **{p}** — {fmt(v)} revenue — Keep 50+ units"
-        for i,(p,v) in enumerate(top5.items())
-    ])
+    items = "\n".join([f"{i+1}. 🔴 **{p}** — {fmt(v)} revenue" for i,(p,v) in enumerate(top5.items())])
+    mem.update("inventory", product=top5.index[0])
     return (
-        f"**📦 Direct Answer:**\nTop 5 at-risk products by sales velocity:\n\n"
-        f"{items}\n\n"
-        f"**💡 Recommendation:** Set auto-reorder alerts at 20 units for top products. "
-        f"Keep **{top5.index[0]}** at 100+ units safety stock."
+        ResponseBuilder("📦", "Inventory Risk Alert")
+        .answer(f"Top 5 products by sales velocity (highest reorder priority):\n\n{items}")
+        .metric("Priority reorder",   top5.index[0],  "⚡")
+        .metric("Safety stock target","50+ units for top SKUs", "🎯")
+        .metric("Auto-reorder trigger","20 units remaining",    "⚠️")
+        .tip(f"Set auto-reorder alerts at 20 units for top products. Keep **{top5.index[0]}** at 100+ units safety stock.")
+        .followup(f"'Days of cover for {top5.index[0]}?' · 'Which city sells it fastest?' · 'OOS impact on revenue?'")
+        .build()
     )
 
 
-def _bb_fallback(q: str, ctx: dict, df: pd.DataFrame) -> str:
+def _bb_compare(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+    """Handle compare / vs / versus queries using memory to resolve entities."""
+    if not any(w in q for w in ["compare","vs","versus","against","difference between"]): return None
+    cr      = ctx["city_r"]
+    cat_r   = ctx["cat_r"]
+    total_r = ctx["total_r"]
+    # City comparison
+    if cr is not None and len(cr) >= 2:
+        c1, c2 = cr.index[0], cr.index[-1]
+        diff   = cr.iloc[0] - cr.iloc[-1]
+        gap    = diff / cr.iloc[-1] * 100 if cr.iloc[-1] else 0
+        mem.update("compare", city=c1)
+        return (
+            ResponseBuilder("⚖️", f"Comparison: {c1} vs {c2}")
+            .answer(f"**{c1}** outperforms **{c2}** by **{gap:.0f}%**.")
+            .metric(c1, fmt(cr.iloc[0]), "🟢")
+            .metric(c2, fmt(cr.iloc[-1]), "🔴")
+            .metric("Revenue gap", fmt(diff), "↕️")
+            .tip(f"Investigate what makes {c1} strong — replicate those tactics in {c2}.")
+            .followup(f"'Products in {c2}' · 'Influencer coverage in {c2}' · 'Category split in {c1}'")
+            .build()
+        )
+    return None
+
+
+def _bb_fallback(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str:
+    hint = ""
+    if mem.last_intent:
+        hint = f"\n\n💬 *Last topic: **{mem.last_intent}** — say 'tell me more' to expand on it.*"
     cols_av = ", ".join(df.columns.tolist())
     return (
-        f"🤔 I didn't catch that. I can help with:\n"
-        f"- 💰 Revenue & Profit\n- 🏆 Best/worst products\n- 📍 City performance\n"
-        f"- 🏷️ Categories\n- ⚡ Influencer impact\n- 🛒 Orders & volume\n"
-        f"- 🏷️ Discount analysis\n- 📦 Inventory alerts\n\n"
-        f"**Your columns:** {cols_av}\n\n"
-        f"Try: *'Give me a summary'* or *'Which city is worst?'*"
+        ResponseBuilder("🤔", "I didn't quite catch that")
+        .answer(
+            "I can help you with:\n"
+            "- 💰 Revenue & Profit analysis\n"
+            "- 🏆 Best / worst products\n"
+            "- 📍 City & region performance\n"
+            "- 🏷️ Category breakdown\n"
+            "- ⚡ Influencer marketing impact\n"
+            "- 🛒 Orders & volume\n"
+            "- 🏷️ Discount effectiveness\n"
+            "- 📦 Inventory alerts\n"
+            "- ⚖️ Compare cities or categories" + hint
+        )
+        .context(f"Available columns: {cols_av}")
+        .followup("'Give me a summary' · 'Which city is worst?' · 'Best product?'")
+        .build()
     )
 
 
 # Dispatch table — ordered from most specific to fallback
 _BB_HANDLERS = [
     _bb_greeting,
+    _bb_compare,
     _bb_summary,
     _bb_revenue,
     _bb_profit,
@@ -836,21 +1136,38 @@ _BB_HANDLERS = [
 
 def blinkbot_analyze(question: str, df: pd.DataFrame) -> str:
     """
-    Route the user's question through the handler dispatch table.
-    Returns a markdown-formatted answer string.
+    Phase 2 entry point:
+      1. Load ConversationMemory from session_state
+      2. Extract named entities from the question
+      3. Resolve vague references using memory
+      4. Route through dispatch table — each handler gets memory
+      5. Save updated memory back to session_state
     """
     if df is None or len(df) == 0:
         return "⚠️ No data loaded yet. Please upload a CSV file to get started!"
 
-    q   = question.lower().strip()
+    mem      = _get_memory()
+    entities = extract_entities(question, df)
+    q_raw    = question.lower().strip()
+
+    # Update memory with any named entities found in the question
+    if entities["city"]:     mem.last_city     = entities["city"]
+    if entities["product"]:  mem.last_product  = entities["product"]
+    if entities["category"]: mem.last_category = entities["category"]
+
+    # Resolve pronouns / vague references
+    q = resolve_references(q_raw, mem)
+
     ctx = _bb_context(df)
 
     for handler in _BB_HANDLERS:
-        result = handler(q, ctx, df)
+        result = handler(q, ctx, df, mem)
         if result is not None:
+            _save_memory(mem)
             return result
 
-    return _bb_fallback(q, ctx, df)
+    _save_memory(mem)
+    return _bb_fallback(q, ctx, df, mem)
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -1348,26 +1665,76 @@ with col2:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# ── BLINKBOT CHATBOT UI
+# ── BLINKBOT CHATBOT UI  (Phase 2 — memory-aware)
 # ══════════════════════════════════════════════════════════════════════════════════
 
 st.markdown('<div class="section-head">🤖 BLINKBOT — AI BUSINESS ANALYST</div>', unsafe_allow_html=True)
-st.markdown(f"""
-<div class="blinkbot-header">
-  <div style="width:42px;height:42px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;">🤖</div>
-  <div>
-    <div style="font-size:15px;font-weight:700;color:#f0f4ff">BlinkBot</div>
-    <div style="font-size:11px;color:#a5b4fc">Senior AI Business Analyst • Always Online</div>
-  </div>
-  <div style="margin-left:auto;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);border-radius:20px;padding:4px 10px;font-size:10px;color:#34d399">● Live</div>
-</div>
-""", unsafe_allow_html=True)
 
+# ── Load current memory for UI display ───────────────────────────────────────────
+_ui_mem = _get_memory()
+
+# ── Header row: bot identity + live memory panel ──────────────────────────────────
+bb_head_col, bb_mem_col = st.columns([3, 2])
+
+with bb_head_col:
+    st.markdown(f"""
+    <div class="blinkbot-header">
+      <div style="width:42px;height:42px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;
+                  display:flex;align-items:center;justify-content:center;font-size:20px;">🤖</div>
+      <div>
+        <div style="font-size:15px;font-weight:700;color:#f0f4ff">BlinkBot</div>
+        <div style="font-size:11px;color:#a5b4fc">Senior AI Business Analyst • Always Online</div>
+      </div>
+      <div style="margin-left:auto;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);
+                  border-radius:20px;padding:4px 10px;font-size:10px;color:#34d399">● Live</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with bb_mem_col:
+    # ── Conversation Memory Panel ─────────────────────────────────────────────────
+    mem_items = [
+        ("💬 Turns",      str(_ui_mem.turn_count)),
+        ("🧠 Last Topic", _ui_mem.last_intent   or "—"),
+        ("📍 Last City",  _ui_mem.last_city      or "—"),
+        ("⭐ Last Product",_ui_mem.last_product  or "—"),
+        ("🏷️ Last Category",_ui_mem.last_category or "—"),
+    ]
+    rows_html = "".join([
+        f'<div style="display:flex;justify-content:space-between;padding:5px 0;'
+        f'border-bottom:1px solid rgba(99,130,255,.06)">'
+        f'<span style="font-size:10px;color:#4a5a7a">{lbl}</span>'
+        f'<span style="font-size:10px;font-weight:600;color:#67e8f9;font-family:monospace">{val}</span>'
+        f'</div>'
+        for lbl, val in mem_items
+    ])
+    topic_stack = " → ".join(_ui_mem.intent_stack) if _ui_mem.intent_stack else "—"
+    st.markdown(f"""
+    <div style="background:#0d1628;border:1px solid rgba(99,130,255,.15);border-radius:12px;padding:14px 16px;">
+      <div style="font-size:10px;font-weight:600;color:#a5b4fc;text-transform:uppercase;
+                  letter-spacing:.08em;margin-bottom:8px">🧠 Conversation Memory</div>
+      {rows_html}
+      <div style="margin-top:8px;padding:6px 8px;background:rgba(99,102,241,.07);border-radius:6px;">
+        <div style="font-size:9px;color:#4a5a7a;margin-bottom:2px">TOPIC TRAIL</div>
+        <div style="font-size:10px;color:#a5b4fc">{topic_stack}</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ── Chat history ──────────────────────────────────────────────────────────────────
 if "blinkbot_history" not in st.session_state:
     st.session_state.blinkbot_history = [{
         "role": "bot",
-        "msg": f"👋 **Hi! I'm BlinkBot**, your AI Business Analyst. I've analyzed **{len(df):,} records**. "
-               f"Ask me anything — revenue, profit, cities, products — or say *'Give me a summary'* to start!",
+        "msg": (
+            f"👋 **Hi! I'm BlinkBot** — your AI Business Analyst with memory.\n\n"
+            f"I've analyzed **{len(df):,} records**. I remember the context of our "
+            f"conversation, so you can ask follow-up questions like:\n"
+            f"- *'Tell me more about it'*\n"
+            f"- *'What about that city?'*\n"
+            f"- *'Compare with the worst one'*\n\n"
+            f"Start with *'Give me a summary'* or ask anything!"
+        ),
     }]
 
 for msg in st.session_state.blinkbot_history:
@@ -1375,33 +1742,55 @@ for msg in st.session_state.blinkbot_history:
     prefix    = "" if msg["role"] == "bot" else "💬 "
     st.markdown(f'<div class="{css_class}">{prefix}{msg["msg"]}</div>', unsafe_allow_html=True)
 
-# Quick questions
+# ── Dynamic quick questions (context-aware) ───────────────────────────────────────
 st.markdown("**💡 Quick Questions:**")
-qcol1, qcol2, qcol3, qcol4 = st.columns(4)
-QUICK_ITEMS = [
-    ("📊 Revenue Summary",   "Give me a full business summary"),
-    ("🏆 Best Product",      "Which product is performing best?"),
-    ("📍 City Analysis",     "Which city is performing worst?"),
-    ("⚡ Influencer Impact", "How is influencer marketing performing?"),
+
+# Base quick items — always shown
+QUICK_BASE = [
+    ("📊 Summary",        "Give me a full business summary"),
+    ("🏆 Best Product",   "Which product is performing best?"),
+    ("📍 City Analysis",  "Which city is performing worst?"),
+    ("⚡ Influencers",    "How is influencer marketing performing?"),
 ]
+
+# Memory-driven follow-up items — shown only when context exists
+QUICK_FOLLOWUP: list[tuple[str,str]] = []
+if _ui_mem.last_intent == "city" and _ui_mem.last_city:
+    QUICK_FOLLOWUP.append((f"⚖️ Compare Cities", "Compare best vs worst city"))
+if _ui_mem.last_intent in ("revenue","summary") and _ui_mem.last_category:
+    QUICK_FOLLOWUP.append((f"🏷️ Category Drill", f"Tell me more about {_ui_mem.last_category}"))
+if _ui_mem.last_product:
+    QUICK_FOLLOWUP.append((f"📦 Reorder Risk", f"Inventory risk for {_ui_mem.last_product}"))
+if _ui_mem.turn_count > 0:
+    QUICK_FOLLOWUP.append(("🔄 Tell Me More", "Tell me more"))
+
+# Show up to 4 buttons (follow-ups take priority when present)
+display_items = (QUICK_FOLLOWUP + QUICK_BASE)[:4]
+quick_cols    = st.columns(len(display_items))
 clicked_quick = None
-for i, (btn_label, question) in enumerate(QUICK_ITEMS):
-    with [qcol1, qcol2, qcol3, qcol4][i]:
+for i, (btn_label, question) in enumerate(display_items):
+    with quick_cols[i]:
         if st.button(btn_label, key=f"bb_q{i}", use_container_width=True):
             clicked_quick = question
 
-# Text input
+# ── Text input form ───────────────────────────────────────────────────────────────
 with st.form(key="bb_main_form", clear_on_submit=True):
     fc1, fc2 = st.columns([5, 1])
     with fc1:
+        placeholder = (
+            f"Follow up: 'tell me more about {_ui_mem.last_city}' or ask something new..."
+            if _ui_mem.last_city
+            else "e.g. What is my total profit? Which city is weakest?"
+        )
         user_input = st.text_input(
             "Ask BlinkBot...",
-            placeholder="e.g. What is my total profit? Which city is weakest?",
+            placeholder=placeholder,
             label_visibility="collapsed",
         )
     with fc2:
         submitted = st.form_submit_button("Ask 🤖", use_container_width=True)
 
+# ── Process question ──────────────────────────────────────────────────────────────
 question_to_answer = None
 if submitted and user_input.strip():
     question_to_answer = user_input.strip()
@@ -1409,15 +1798,19 @@ elif clicked_quick:
     question_to_answer = clicked_quick
 
 if question_to_answer:
-    st.session_state.blinkbot_history.append({"role":"user","msg":question_to_answer})
+    st.session_state.blinkbot_history.append({"role": "user", "msg": question_to_answer})
     response = blinkbot_analyze(question_to_answer, df)
-    st.session_state.blinkbot_history.append({"role":"bot","msg":response})
+    st.session_state.blinkbot_history.append({"role": "bot",  "msg": response})
     st.rerun()
 
+# ── Clear chat + memory ───────────────────────────────────────────────────────────
 if len(st.session_state.blinkbot_history) > 1:
-    if st.button("🗑️ Clear Chat", type="secondary", key="clear_chat"):
-        st.session_state.blinkbot_history = []
-        st.rerun()
+    cl1, cl2 = st.columns([1, 5])
+    with cl1:
+        if st.button("🗑️ Clear Chat & Memory", type="secondary", key="clear_chat", use_container_width=True):
+            st.session_state.blinkbot_history = []
+            st.session_state.bb_memory        = ConversationMemory().to_dict()
+            st.rerun()
 
 # ── RAW DATA TABLE ────────────────────────────────────────────────────────────────
 if show_raw:
@@ -1432,7 +1825,7 @@ if show_raw:
 # ── FOOTER ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="footer">
-  Ayush Intelligence Hub v2.0 &nbsp;·&nbsp;
+  Ayush Intelligence Hub v3.0 — Phase 2 &nbsp;·&nbsp;
   Developed by <span class="dev">Ayush Mishra</span> &nbsp;·&nbsp;
   Pandas · SciPy · scikit-learn · Streamlit · Plotly
 </div>
