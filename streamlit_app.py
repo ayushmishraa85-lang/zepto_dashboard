@@ -805,14 +805,187 @@ def _bb_context(df: pd.DataFrame) -> dict:
                 n_inf_y=len(df[df["Influencer Active"]=="Yes"]) if "Influencer Active" in df.columns else 0)
 
 
-def _bb_greeting(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+# ── 5. Chart Factories (Phase 3) ─────────────────────────────────────────────────
+# Each factory returns a go.Figure styled to match the dashboard theme.
+# They are called by handlers and attached to the response as an inline chart.
+
+def _chart_revenue_by_category(ctx: dict) -> go.Figure:
+    cat_r = ctx["cat_r"]
+    fig = go.Figure(go.Bar(
+        x=cat_r.index.tolist(), y=cat_r.values,
+        marker_color=[CAT_CLR.get(c, "#6366f1") for c in cat_r.index],
+        marker_line_width=0, opacity=0.85,
+        text=[fmt(v) for v in cat_r.values], textposition="outside",
+        textfont=dict(color="#f0f4ff", size=10),
+    ))
+    fig.update_layout(**PLOTLY_LAYOUT,
+        title=dict(text="💬 Revenue by Category", font=dict(color="#a5b4fc", size=12)),
+        height=240, yaxis=dict(tickprefix="₹", **PLOTLY_LAYOUT["yaxis"]), showlegend=False)
+    return fig
+
+
+def _chart_city_ranking(ctx: dict) -> go.Figure:
+    cr = ctx["city_r"]
+    colors = ["#10b981" if i == 0 else "#ef4444" if i == len(cr)-1 else "#6366f1"
+              for i in range(len(cr))]
+    fig = go.Figure(go.Bar(
+        x=cr.values, y=cr.index.tolist(), orientation="h",
+        marker_color=colors, marker_line_width=0, opacity=0.85,
+        text=[fmt(v) for v in cr.values], textposition="outside",
+        textfont=dict(color="#f0f4ff", size=10),
+    ))
+    fig.update_layout(**PLOTLY_LAYOUT,
+        title=dict(text="💬 City Revenue Ranking", font=dict(color="#a5b4fc", size=12)),
+        height=240, xaxis=dict(tickprefix="₹", **PLOTLY_LAYOUT["xaxis"]),
+        yaxis=dict(autorange="reversed", **PLOTLY_LAYOUT["yaxis"]), showlegend=False)
+    return fig
+
+
+def _chart_top_products(ctx: dict, n: int = 8) -> go.Figure:
+    pr = ctx["prod_r"].head(n)
+    fig = go.Figure(go.Bar(
+        x=pr.values, y=pr.index.tolist(), orientation="h",
+        marker=dict(
+            color=pr.values,
+            colorscale=[[0,"#312e81"],[0.5,"#6366f1"],[1,"#06b6d4"]],
+            showscale=False,
+        ),
+        marker_line_width=0,
+        text=[fmt(v) for v in pr.values], textposition="outside",
+        textfont=dict(color="#f0f4ff", size=10),
+    ))
+    fig.update_layout(**PLOTLY_LAYOUT,
+        title=dict(text=f"💬 Top {n} Products by Revenue", font=dict(color="#a5b4fc", size=12)),
+        height=260, xaxis=dict(tickprefix="₹", **PLOTLY_LAYOUT["xaxis"]),
+        yaxis=dict(autorange="reversed", **PLOTLY_LAYOUT["yaxis"]), showlegend=False)
+    return fig
+
+
+def _chart_influencer_lift(ctx: dict, df: pd.DataFrame) -> go.Figure:
+    grp = df.groupby(["Category","Influencer Active"])["Total Revenue"].mean().reset_index()
+    grp.columns = ["Category","Influencer","Avg Revenue"]
+    fig = px.bar(grp, x="Category", y="Avg Revenue", color="Influencer",
+                 barmode="group", color_discrete_map={"Yes":"#6366f1","No":"#4a5a7a"})
+    fig.update_layout(**PLOTLY_LAYOUT,
+        title=dict(text="💬 Influencer Lift by Category", font=dict(color="#a5b4fc", size=12)),
+        height=240, yaxis=dict(tickprefix="₹", **PLOTLY_LAYOUT["yaxis"]))
+    fig.update_traces(marker_line_width=0, opacity=0.85)
+    return fig
+
+
+def _chart_discount_curve(ctx: dict) -> go.Figure:
+    dg = ctx["disc_grp"]
+    if dg is None: return None
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(
+        x=dg["Discount"].astype(str)+"%", y=dg["avg_rev"],
+        name="Avg Revenue", marker_color="#6366f1", opacity=0.85, marker_line_width=0,
+    ), secondary_y=False)
+    fig.add_trace(go.Scatter(
+        x=dg["Discount"].astype(str)+"%", y=dg["avg_orders"],
+        name="Avg Orders", mode="lines+markers+text",
+        text=[f"{v:.0f}" for v in dg["avg_orders"]],
+        textposition="top center", textfont=dict(color="#06b6d4", size=9),
+        line=dict(color="#06b6d4", width=2), marker=dict(size=7),
+    ), secondary_y=True)
+    fig.update_layout(**PLOTLY_LAYOUT,
+        title=dict(text="💬 Discount Sweet Spot", font=dict(color="#a5b4fc", size=12)),
+        height=240)
+    fig.update_yaxes(tickprefix="₹", secondary_y=False)
+    return fig
+
+
+def _chart_profit_margin_by_category(ctx: dict, df: pd.DataFrame) -> go.Figure:
+    bm = ctx["best_m"]
+    if bm is None: return None
+    colors = ["#10b981" if v >= 0 else "#ef4444" for v in bm.values]
+    fig = go.Figure(go.Bar(
+        x=bm.index.tolist(), y=bm.values,
+        marker_color=colors, marker_line_width=0, opacity=0.85,
+        text=[f"{v:.1f}%" for v in bm.values], textposition="outside",
+        textfont=dict(color="#f0f4ff", size=10),
+    ))
+    fig.update_layout(**PLOTLY_LAYOUT,
+        title=dict(text="💬 Avg Profit Margin by Category", font=dict(color="#a5b4fc", size=12)),
+        height=240, yaxis=dict(ticksuffix="%", **PLOTLY_LAYOUT["yaxis"]), showlegend=False)
+    return fig
+
+
+def _chart_orders_by_city(df: pd.DataFrame) -> go.Figure:
+    city_ord = df.groupby("City")["Orders"].sum().sort_values(ascending=False)
+    fig = go.Figure(go.Bar(
+        x=city_ord.index.tolist(), y=city_ord.values,
+        marker_color=[CITY_CLR.get(c,"#6366f1") for c in city_ord.index],
+        marker_line_width=0, opacity=0.85,
+        text=city_ord.values, textposition="outside",
+        textfont=dict(color="#f0f4ff", size=10),
+    ))
+    fig.update_layout(**PLOTLY_LAYOUT,
+        title=dict(text="💬 Orders by City", font=dict(color="#a5b4fc", size=12)),
+        height=240, showlegend=False)
+    return fig
+
+
+def _chart_summary_snapshot(ctx: dict) -> go.Figure:
+    """Mini 4-panel summary chart for the executive summary response."""
+    cat_r  = ctx["cat_r"]
+    city_r = ctx["city_r"]
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=["Revenue by Category", "Revenue by City"],
+        specs=[[{"type":"pie"}, {"type":"bar"}]],
+    )
+    fig.add_trace(go.Pie(
+        labels=cat_r.index.tolist(), values=cat_r.values,
+        marker_colors=[CAT_CLR.get(c,"#6366f1") for c in cat_r.index],
+        hole=0.5, textinfo="label+percent", textfont_size=9, showlegend=False,
+    ), row=1, col=1)
+    fig.add_trace(go.Bar(
+        x=city_r.index.tolist(), y=city_r.values,
+        marker_color=[CITY_CLR.get(c,"#6366f1") for c in city_r.index],
+        marker_line_width=0, opacity=0.85,
+        text=[fmt(v) for v in city_r.values], textposition="outside",
+        textfont=dict(color="#f0f4ff", size=9), showlegend=False,
+    ), row=1, col=2)
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter", color="#8899bb", size=10),
+        margin=dict(l=10, r=10, t=40, b=10), height=260,
+        title=dict(text="💬 Snapshot", font=dict(color="#a5b4fc", size=12)),
+    )
+    fig.update_annotations(font_color="#8899bb", font_size=10)
+    fig.update_yaxes(tickprefix="₹", gridcolor="rgba(99,130,255,.06)")
+    return fig
+
+
+def _fig_to_json(fig: go.Figure) -> str | None:
+    """Serialize a Plotly figure to JSON for session_state storage."""
+    if fig is None: return None
+    import json
+    return fig.to_json()
+
+
+def _fig_from_json(s: str | None) -> go.Figure | None:
+    """Deserialize a Plotly figure from JSON."""
+    if not s: return None
+    import json
+    return go.Figure(json.loads(s))
+
+
+# ── Type alias for handler return ─────────────────────────────────────────────────
+# Each handler returns (text, fig) | None
+# fig=None means no inline chart for this response
+BotReply = tuple[str, "go.Figure | None"]
+
+
+def _bb_greeting(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["hello","hi","hey","namaste","hii"]): return None
-    c        = ctx
+    c         = ctx
     returning = mem.turn_count > 0
-    opener   = (f"Welcome back! You've asked **{mem.turn_count}** question(s) so far."
-                if returning else f"I've analyzed **{len(df):,} records** and I'm ready to help.")
+    opener    = (f"Welcome back! You've asked **{mem.turn_count}** question(s) so far."
+                 if returning else f"I've analyzed **{len(df):,} records** and I'm ready to help.")
     mem.update("greeting")
-    return (
+    text = (
         ResponseBuilder("👋", "Hi! I'm BlinkBot — your AI Business Analyst")
         .answer(opener)
         .metric("Total Revenue", fmt(c["total_r"]), "💰")
@@ -822,21 +995,22 @@ def _bb_greeting(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -
         .followup("'Give me a full summary' · 'Which city is weakest?' · 'Best product?'")
         .build()
     )
+    return text, _chart_revenue_by_category(ctx)
 
 
-def _bb_summary(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_summary(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["summary","overview","analyze","brief","insights","tell me"]): return None
-    c = ctx
-    aov = c["total_r"] / c["total_o"] if c["total_o"] else 0
+    c       = ctx
+    aov     = c["total_r"] / c["total_o"] if c["total_o"] else 0
     weakest = c["city_r"].index[-1] if c["city_r"] is not None else "N/A"
     mem.update("summary",
-               city     = c["city_r"].index[0]  if c["city_r"]  is not None else None,
-               product  = c["prod_r"].index[0]  if c["prod_r"]  is not None else None,
-               category = c["cat_r"].index[0]   if c["cat_r"]   is not None else None)
-    return (
+               city     = c["city_r"].index[0] if c["city_r"] is not None else None,
+               product  = c["prod_r"].index[0] if c["prod_r"] is not None else None,
+               category = c["cat_r"].index[0]  if c["cat_r"]  is not None else None)
+    text = (
         ResponseBuilder("📋", "Executive Summary")
         .answer(f"Here's everything at a glance across **{len(df):,} records**.")
-        .metric("Total Revenue",  fmt(c["total_r"]),  "💰")
+        .metric("Total Revenue",  fmt(c["total_r"]), "💰")
         .metric("Total Profit",   f"{fmt(c['total_p'])} ({c['mgn']:.1f}% margin)", "📈")
         .metric("Total Orders",   f"{int(c['total_o']):,} | AOV: {fmt(aov)}", "🛒")
         .metric("Best Category",  f"{c['cat_r'].index[0] if c['cat_r'] is not None else 'N/A'} "
@@ -847,17 +1021,17 @@ def _bb_summary(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) ->
         .context(f"⚠️ **{weakest}** is your weakest region — investigate and run targeted promotions.")
         .tip(f"Focus on {c['cat_r'].index[0] if c['cat_r'] is not None else 'top category'} "
              f"in {c['city_r'].index[0] if c['city_r'] is not None else 'top city'} — this is your growth engine.")
-        .followup(f"'Tell me about {weakest}' · 'Why is {weakest} underperforming?' · 'Breakdown by category'")
+        .followup(f"'Tell me about {weakest}' · 'Breakdown by category' · 'Best product?'")
         .build()
     )
+    return text, _chart_summary_snapshot(ctx)
 
 
-def _bb_revenue(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_revenue(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["revenue","how much","earnings","sales total"]): return None
-    c       = ctx
-    top_cat = c["cat_r"].index[0] if c["cat_r"] is not None else "N/A"
-    top_city= c["city_r"].index[0] if c["city_r"] is not None else "N/A"
-    # Check if user asked about a specific city from memory
+    c        = ctx
+    top_cat  = c["cat_r"].index[0]  if c["cat_r"]  is not None else "N/A"
+    top_city = c["city_r"].index[0] if c["city_r"] is not None else "N/A"
     target_city = mem.last_city
     extra_ctx   = ""
     if target_city and target_city in df["City"].values:
@@ -868,87 +1042,87 @@ def _bb_revenue(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) ->
     rb = (
         ResponseBuilder("📊", "Revenue Analysis")
         .answer(f"Total revenue is **{fmt(c['total_r'])}** across **{len(df):,} transactions**.")
-        .metric("Best category", f"{top_cat} ({c['cat_r'].iloc[0]/c['total_r']*100:.1f}%)" if c["cat_r"] is not None else "N/A", "🏆")
-        .metric("Top city",      top_city,             "📍")
-        .metric("Net profit",    f"{fmt(c['total_p'])} ({c['mgn']:.1f}% margin)", "💰")
-        .metric("Avg order value",fmt(c["total_r"]/c["total_o"] if c["total_o"] else 0), "🛒")
+        .metric("Best category",   f"{top_cat} ({c['cat_r'].iloc[0]/c['total_r']*100:.1f}%)" if c["cat_r"] is not None else "N/A", "🏆")
+        .metric("Top city",        top_city, "📍")
+        .metric("Net profit",      f"{fmt(c['total_p'])} ({c['mgn']:.1f}% margin)", "💰")
+        .metric("Avg order value", fmt(c["total_r"]/c["total_o"] if c["total_o"] else 0), "🛒")
     )
     if extra_ctx: rb = rb.context(extra_ctx)
     rb = rb.tip(f"Double down on **{top_cat}** in **{top_city}** — allocate 30% more marketing budget here.")
     rb = rb.followup("'Break down by category' · 'Which product earns most?' · 'Compare cities'")
-    return rb.build()
+    return rb.build(), _chart_revenue_by_category(ctx)
 
 
-def _bb_profit(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_profit(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["profit","margin","net"]): return None
-    c  = ctx
-    bm = c["best_m"]
+    c          = ctx
+    bm         = c["best_m"]
     prev_topic = mem.last_intent
     mem.update("profit", category=bm.index[0] if bm is not None else None)
     rb = (
         ResponseBuilder("💰", "Profit & Margin Analysis")
         .answer(f"Total profit is **{fmt(c['total_p'])}** on revenue of **{fmt(c['total_r'])}**.")
-        .metric("Profit margin",     f"{c['mgn']:.1f}%",  "📈")
-        .metric("Highest-margin cat",f"{bm.index[0] if bm is not None else 'N/A'} ({bm.iloc[0]:.1f}%)" if bm is not None else "N/A", "🏆")
-        .metric("Lowest-margin cat", f"{bm.index[-1] if bm is not None else 'N/A'} — needs review" if bm is not None else "N/A", "⚠️")
-        .metric("Keep per ₹100",     f"₹{c['mgn']:.0f}", "🪙")
+        .metric("Profit margin",      f"{c['mgn']:.1f}%", "📈")
+        .metric("Highest-margin cat", f"{bm.index[0] if bm is not None else 'N/A'} ({bm.iloc[0]:.1f}%)" if bm is not None else "N/A", "🏆")
+        .metric("Lowest-margin cat",  f"{bm.index[-1] if bm is not None else 'N/A'} — needs review"     if bm is not None else "N/A", "⚠️")
+        .metric("Keep per ₹100",      f"₹{c['mgn']:.0f}", "🪙")
     )
     if prev_topic == "revenue":
-        rb = rb.context("You were just looking at revenue — profit margin tells you how much of that you actually keep.")
-    rb = rb.tip(f"Grow **{bm.index[0] if bm is not None else 'top category'}** volume — it gives the best return per rupee sold.")
-    rb = rb.followup("'Which product has best margin?' · 'How can I improve margin?' · 'Revenue breakdown'")
-    return rb.build()
+        rb = rb.context("You were just looking at revenue — margin tells you how much you actually keep.")
+    rb = rb.tip(f"Grow **{bm.index[0] if bm is not None else 'top category'}** volume — best return per rupee sold.")
+    rb = rb.followup("'Which product has best margin?' · 'Revenue breakdown' · 'Discount impact on margin?'")
+    return rb.build(), _chart_profit_margin_by_category(ctx, df)
 
 
-def _bb_best_product(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_best_product(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["best product","top product","number one","highest selling"]): return None
     pr = ctx["prod_r"]
-    if pr is None: return "Product data not available."
+    if pr is None: return "Product data not available.", None
     top3   = pr.head(3)
     medals = ["🥇","🥈","🥉"]
     lines  = "\n".join([f"{medals[i]} **{top3.index[i]}** — {fmt(top3.iloc[i])}" for i in range(len(top3))])
     mem.update("best_product", product=top3.index[0])
-    return (
+    text = (
         ResponseBuilder("🏆", "Top Products by Revenue")
-        .answer(f"Your #1 product is **{top3.index[0]}** generating **{fmt(top3.iloc[0])}**.")
-        .answer(f"\n{lines}")
-        .metric("Share of total revenue", f"{top3.iloc[0]/ctx['total_r']*100:.1f}%", "📊")
+        .answer(f"Your #1 product is **{top3.index[0]}** generating **{fmt(top3.iloc[0])}**.\n\n{lines}")
+        .metric("Share of total", f"{top3.iloc[0]/ctx['total_r']*100:.1f}%", "📊")
         .metric("Runner-up gap",  fmt(top3.iloc[0]-top3.iloc[1]) if len(top3)>1 else "—", "↔️")
-        .tip(f"Keep **{top3.index[0]}** always in stock. Bundle with **{top3.index[1] if len(top3)>1 else '#2'}** to boost average order value.")
-        .followup(f"'Tell me more about {top3.index[0]}' · 'Which city sells it most?' · 'Worst products?'")
+        .tip(f"Keep **{top3.index[0]}** always in stock. Bundle with **{top3.index[1] if len(top3)>1 else '#2'}** to boost AOV.")
+        .followup(f"'Worst products?' · 'Which city sells {top3.index[0]} most?' · 'Inventory alert?'")
         .build()
     )
+    return text, _chart_top_products(ctx)
 
 
-def _bb_worst_product(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_worst_product(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["worst product","lowest","weakest product"]): return None
     pr = ctx["prod_r"]
-    if pr is None: return "Product data not available."
+    if pr is None: return "Product data not available.", None
     worst = pr.tail(3).sort_values()
     lines = "\n".join([f"{['🔴','🟡','🟡'][i]} **{worst.index[i]}** — {fmt(worst.iloc[i])}" for i in range(len(worst))])
     mem.update("worst_product", product=worst.index[0])
-    return (
+    text = (
         ResponseBuilder("⚠️", "Underperforming Products")
         .answer(f"Lowest revenue: **{worst.index[0]}** at only **{fmt(worst.iloc[0])}**.\n\n{lines}")
-        .metric("Gap to #1 product", fmt(ctx["prod_r"].iloc[0] - worst.iloc[0]), "↕️")
-        .tip("Run a 30-day promotion on these. If no improvement in 2 weeks, discontinue the lowest performer.")
-        .followup(f"'Why is {worst.index[0]} underperforming?' · 'Compare with best product' · 'Category breakdown'")
+        .metric("Gap to #1", fmt(ctx["prod_r"].iloc[0] - worst.iloc[0]), "↕️")
+        .tip("Run a 30-day promotion on these. If no improvement, discontinue the lowest performer.")
+        .followup(f"'Best product?' · 'Category for {worst.index[0]}?' · 'Discount to boost it?'")
         .build()
     )
+    return text, _chart_top_products(ctx, n=8)
 
 
-def _bb_city(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_city(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["city","region","location","where"]): return None
-    cr     = ctx["city_r"]
-    if cr is None: return "City data not found."
-    weakest = cr.index[-1]
-    best    = cr.index[0]
-    gap_pct = ((cr.iloc[0]-cr.iloc[-1])/cr.iloc[-1]*100) if len(cr)>1 and cr.iloc[-1]>0 else 0
-    ranking = "\n".join([
+    cr      = ctx["city_r"]
+    if cr is None: return "City data not found.", None
+    weakest  = cr.index[-1]
+    best     = cr.index[0]
+    gap_pct  = ((cr.iloc[0]-cr.iloc[-1])/cr.iloc[-1]*100) if len(cr)>1 and cr.iloc[-1]>0 else 0
+    ranking  = "\n".join([
         f"{i+1}. {'🟢' if i==0 else '🟡' if i<len(cr)-1 else '🔴'} **{c}** — {fmt(v)}"
         for i,(c,v) in enumerate(cr.items())
     ])
-    # Was a specific city asked about vs memory?
     prev_city = mem.last_city
     mem.update("city", city=best)
     rb = (
@@ -956,129 +1130,130 @@ def _bb_city(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> st
         .answer(f"**{best}** is your strongest market at **{fmt(cr.iloc[0])}**.\n\n{ranking}")
         .metric("Performance gap", f"{gap_pct:.0f}% between best and worst", "↕️")
     )
-    if prev_city and prev_city != best:
-        prev_val = cr[prev_city] if prev_city in cr.index else 0
-        rb = rb.context(f"You asked about **{prev_city}** earlier — it generates {fmt(prev_val)}, ranked #{list(cr.index).index(prev_city)+1 if prev_city in cr.index else 'N/A'}.")
+    if prev_city and prev_city != best and prev_city in cr.index:
+        prev_val = cr[prev_city]
+        rb = rb.context(f"You asked about **{prev_city}** earlier — {fmt(prev_val)}, ranked #{list(cr.index).index(prev_city)+1}.")
     if gap_pct > 50:
-        rb = rb.context(f"⚠️ {weakest} underperforms by **{gap_pct:.0f}%** — this is a major opportunity.")
+        rb = rb.context(f"⚠️ {weakest} underperforms by **{gap_pct:.0f}%** — big opportunity here.")
     rb = rb.tip(f"Replicate {best}'s success in {weakest} — start with influencer campaigns for top 3 products.")
-    rb = rb.followup(f"'Revenue in {weakest}' · 'Best product in {best}' · 'Category split by city'")
-    return rb.build()
+    rb = rb.followup(f"'Revenue in {weakest}' · 'Best product in {best}' · 'Compare cities'")
+    return rb.build(), _chart_city_ranking(ctx)
 
 
-def _bb_category(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_category(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["category","segment","best category"]): return None
     cat_r   = ctx["cat_r"]
     total_r = ctx["total_r"]
-    if cat_r is None: return "Category data not available."
-    medals = ["🥇","🥈","🥉"] + ["▫️"]*(len(cat_r)-3)
-    lines  = "\n".join([f"{medals[i]} **{c}** — {fmt(v)} ({v/total_r*100:.1f}%)" for i,(c,v) in enumerate(cat_r.items())])
+    if cat_r is None: return "Category data not available.", None
+    medals  = ["🥇","🥈","🥉"] + ["▫️"]*(len(cat_r)-3)
+    lines   = "\n".join([f"{medals[i]} **{c}** — {fmt(v)} ({v/total_r*100:.1f}%)" for i,(c,v) in enumerate(cat_r.items())])
     weakest = cat_r.index[-1]
     mem.update("category", category=cat_r.index[0])
-    return (
+    text = (
         ResponseBuilder("🏷️", "Category Performance Breakdown")
         .answer(f"**{cat_r.index[0]}** leads with **{fmt(cat_r.iloc[0])}** ({cat_r.iloc[0]/total_r*100:.1f}% of total).\n\n{lines}")
         .metric("Categories tracked", str(len(cat_r)), "📂")
         .metric("Weakest segment",    f"{weakest} ({cat_r.iloc[-1]/total_r*100:.1f}%)", "⚠️")
-        .tip(f"**{weakest}** is weakest at {cat_r.iloc[-1]/total_r*100:.1f}%. Either promote it or shift budget to **{cat_r.index[0]}**.")
-        .followup(f"'Products in {cat_r.index[0]}' · 'Which city buys most {cat_r.index[0]}?' · 'Margin by category'")
+        .tip(f"**{weakest}** is weakest at {cat_r.iloc[-1]/total_r*100:.1f}%. Promote it or shift budget to **{cat_r.index[0]}**.")
+        .followup(f"'Products in {cat_r.index[0]}' · 'Which city buys most?' · 'Margin by category'")
         .build()
     )
+    return text, _chart_revenue_by_category(ctx)
 
 
-def _bb_influencer(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_influencer(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["influencer","marketing","campaign"]): return None
-    if "Influencer Active" not in df.columns: return "Influencer data not available."
-    c = ctx
+    if "Influencer Active" not in df.columns: return "Influencer data not available.", None
+    c           = ctx
     significant = abs(c["inf_lift"]) > 5
     mem.update("influencer")
-    return (
+    text = (
         ResponseBuilder("⚡", "Influencer Marketing Impact")
         .answer(f"Influencer-active products generate a **{c['inf_lift']:+.1f}% revenue lift**.")
         .metric("With influencer (avg rev)",    fmt(c["inf_y_rev"]), "✅")
         .metric("Without influencer (avg rev)", fmt(c["inf_n_rev"]), "❌")
         .metric("Order volume lift",            f"{c['ord_lift']:+.1f}%", "📦")
         .metric("Influencer-active SKUs",       f"{c['n_inf_y']} of {len(df)}", "🎯")
-        .context("Lift is statistically meaningful ✓" if significant else "Lift is small — consider running a larger test.")
+        .context("Lift is statistically meaningful ✓" if significant else "Lift is small — run a larger test.")
         .tip("Scale up — activate influencers for ALL top-category products!" if c["inf_lift"]>5 else "Small lift — focus on micro-influencers in specific cities.")
-        .followup("'Which category benefits most from influencers?' · 'ROI on influencer spend?' · 'Top cities for campaigns?'")
+        .followup("'Which category benefits most?' · 'Top cities for campaigns?' · 'Influencer ROI?'")
         .build()
     )
+    return text, _chart_influencer_lift(ctx, df)
 
 
-def _bb_orders(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_orders(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["orders","order count","volume","how many orders"]): return None
     c      = ctx
     aov    = c["total_r"] / c["total_o"] if c["total_o"] else 0
     top_co = df.groupby("City")["Orders"].sum().sort_values(ascending=False) if "City" in df.columns else None
     mem.update("orders", city=top_co.index[0] if top_co is not None else None)
-    return (
+    text = (
         ResponseBuilder("🛒", "Order Volume Analysis")
         .answer(f"**{int(c['total_o']):,} total orders** have been processed.")
-        .metric("Average order value",   fmt(aov), "💰")
-        .metric("Top city by orders",    f"{top_co.index[0] if top_co is not None else 'N/A'} ({int(top_co.iloc[0]):,})", "📍")
-        .metric("Revenue per order",     fmt(c["total_r"]/c["total_o"] if c["total_o"] else 0), "📊")
-        .metric("Target AOV (+15%)",     fmt(aov*1.15), "🎯")
+        .metric("Average order value",  fmt(aov), "💰")
+        .metric("Top city by orders",   f"{top_co.index[0] if top_co is not None else 'N/A'} ({int(top_co.iloc[0]):,})", "📍")
+        .metric("Revenue per order",    fmt(c["total_r"]/c["total_o"] if c["total_o"] else 0), "📊")
+        .metric("Target AOV (+15%)",    fmt(aov*1.15), "🎯")
         .tip(f"Increase AOV from **{fmt(aov)}** to **{fmt(aov*1.15)}** with bundle deals. 15% AOV lift = 15% more revenue at zero extra cost.")
-        .followup("'Which product has most orders?' · 'Orders by city?' · 'Discount impact on orders?'")
+        .followup("'Which product has most orders?' · 'Orders by city?' · 'Discount impact?'")
         .build()
     )
+    return text, _chart_orders_by_city(df)
 
 
-def _bb_discount(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_discount(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["discount","offer","deal","promo"]): return None
     dg = ctx["disc_grp"]
-    if dg is None: return "Discount data not available."
+    if dg is None: return "Discount data not available.", None
     best  = dg.loc[dg["avg_rev"].idxmax()]
     lines = "\n".join([
         f"- **{int(r.Discount)}%** → Avg Rev: {fmt(r.avg_rev)} | Avg Orders: {r.avg_orders:.0f}"
         for _, r in dg.iterrows()
     ])
     mem.update("discount")
-    return (
+    text = (
         ResponseBuilder("🏷️", "Discount Effectiveness Analysis")
         .answer(f"Most effective discount: **{int(best['Discount'])}%** generating **{fmt(best['avg_rev'])}** avg revenue.\n\n{lines}")
-        .metric("Sweet-spot discount",  f"{int(best['Discount'])}%", "🎯")
-        .metric("Peak avg revenue",     fmt(best["avg_rev"]), "💰")
-        .metric("Peak avg orders",      f"{best['avg_orders']:.0f}", "🛒")
-        .tip(f"Stick to **{int(best['Discount'])}%** as your standard promotional rate. Avoid deeper discounts — they train customers to wait for sales.")
-        .followup("'Does discount affect profit margin?' · 'Which category discounts best?' · 'Order volume vs discount'")
+        .metric("Sweet-spot discount", f"{int(best['Discount'])}%", "🎯")
+        .metric("Peak avg revenue",    fmt(best["avg_rev"]), "💰")
+        .metric("Peak avg orders",     f"{best['avg_orders']:.0f}", "🛒")
+        .tip(f"Stick to **{int(best['Discount'])}%** as your standard promo rate. Avoid deeper discounts — they train customers to wait.")
+        .followup("'Discount vs profit margin?' · 'Which category discounts best?' · 'Order volume vs discount'")
         .build()
     )
+    return text, _chart_discount_curve(ctx)
 
 
-def _bb_inventory(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
+def _bb_inventory(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["stock","inventory","reorder","shortage"]): return None
     pr = ctx["prod_r"]
-    if pr is None: return "Product data not available."
+    if pr is None: return "Product data not available.", None
     top5  = pr.head(5)
     items = "\n".join([f"{i+1}. 🔴 **{p}** — {fmt(v)} revenue" for i,(p,v) in enumerate(top5.items())])
     mem.update("inventory", product=top5.index[0])
-    return (
+    text = (
         ResponseBuilder("📦", "Inventory Risk Alert")
         .answer(f"Top 5 products by sales velocity (highest reorder priority):\n\n{items}")
-        .metric("Priority reorder",   top5.index[0],  "⚡")
-        .metric("Safety stock target","50+ units for top SKUs", "🎯")
-        .metric("Auto-reorder trigger","20 units remaining",    "⚠️")
+        .metric("Priority reorder",    top5.index[0], "⚡")
+        .metric("Safety stock target", "50+ units for top SKUs", "🎯")
+        .metric("Auto-reorder trigger","20 units remaining",     "⚠️")
         .tip(f"Set auto-reorder alerts at 20 units for top products. Keep **{top5.index[0]}** at 100+ units safety stock.")
         .followup(f"'Days of cover for {top5.index[0]}?' · 'Which city sells it fastest?' · 'OOS impact on revenue?'")
         .build()
     )
+    return text, _chart_top_products(ctx, n=5)
 
 
-def _bb_compare(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str | None:
-    """Handle compare / vs / versus queries using memory to resolve entities."""
+def _bb_compare(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply | None:
     if not any(w in q for w in ["compare","vs","versus","against","difference between"]): return None
-    cr      = ctx["city_r"]
-    cat_r   = ctx["cat_r"]
-    total_r = ctx["total_r"]
-    # City comparison
+    cr = ctx["city_r"]
     if cr is not None and len(cr) >= 2:
         c1, c2 = cr.index[0], cr.index[-1]
         diff   = cr.iloc[0] - cr.iloc[-1]
         gap    = diff / cr.iloc[-1] * 100 if cr.iloc[-1] else 0
         mem.update("compare", city=c1)
-        return (
+        text = (
             ResponseBuilder("⚖️", f"Comparison: {c1} vs {c2}")
             .answer(f"**{c1}** outperforms **{c2}** by **{gap:.0f}%**.")
             .metric(c1, fmt(cr.iloc[0]), "🟢")
@@ -1088,83 +1263,63 @@ def _bb_compare(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) ->
             .followup(f"'Products in {c2}' · 'Influencer coverage in {c2}' · 'Category split in {c1}'")
             .build()
         )
+        return text, _chart_city_ranking(ctx)
     return None
 
 
-def _bb_fallback(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> str:
-    hint = ""
-    if mem.last_intent:
-        hint = f"\n\n💬 *Last topic: **{mem.last_intent}** — say 'tell me more' to expand on it.*"
+def _bb_fallback(q: str, ctx: dict, df: pd.DataFrame, mem: ConversationMemory) -> BotReply:
+    hint    = f"\n\n💬 *Last topic: **{mem.last_intent}** — say 'tell me more' to expand.*" if mem.last_intent else ""
     cols_av = ", ".join(df.columns.tolist())
-    return (
+    text = (
         ResponseBuilder("🤔", "I didn't quite catch that")
         .answer(
             "I can help you with:\n"
-            "- 💰 Revenue & Profit analysis\n"
-            "- 🏆 Best / worst products\n"
-            "- 📍 City & region performance\n"
-            "- 🏷️ Category breakdown\n"
-            "- ⚡ Influencer marketing impact\n"
-            "- 🛒 Orders & volume\n"
-            "- 🏷️ Discount effectiveness\n"
-            "- 📦 Inventory alerts\n"
-            "- ⚖️ Compare cities or categories" + hint
+            "- 💰 Revenue & Profit\n- 🏆 Best / worst products\n- 📍 City performance\n"
+            "- 🏷️ Category breakdown\n- ⚡ Influencer impact\n- 🛒 Orders & volume\n"
+            "- 🏷️ Discount analysis\n- 📦 Inventory alerts\n- ⚖️ Compare cities" + hint
         )
         .context(f"Available columns: {cols_av}")
         .followup("'Give me a summary' · 'Which city is worst?' · 'Best product?'")
         .build()
     )
+    return text, None
 
 
-# Dispatch table — ordered from most specific to fallback
+# Dispatch table
 _BB_HANDLERS = [
-    _bb_greeting,
-    _bb_compare,
-    _bb_summary,
-    _bb_revenue,
-    _bb_profit,
-    _bb_best_product,
-    _bb_worst_product,
-    _bb_city,
-    _bb_category,
-    _bb_influencer,
-    _bb_orders,
-    _bb_discount,
-    _bb_inventory,
+    _bb_greeting, _bb_compare, _bb_summary, _bb_revenue, _bb_profit,
+    _bb_best_product, _bb_worst_product, _bb_city, _bb_category,
+    _bb_influencer, _bb_orders, _bb_discount, _bb_inventory,
 ]
 
 
-def blinkbot_analyze(question: str, df: pd.DataFrame) -> str:
+def blinkbot_analyze(question: str, df: pd.DataFrame) -> BotReply:
     """
-    Phase 2 entry point:
-      1. Load ConversationMemory from session_state
-      2. Extract named entities from the question
-      3. Resolve vague references using memory
-      4. Route through dispatch table — each handler gets memory
-      5. Save updated memory back to session_state
+    Phase 3 entry point — returns (response_text, plotly_fig | None).
+    1. Load ConversationMemory
+    2. Extract named entities, resolve vague references
+    3. Route through dispatch table
+    4. Save updated memory
     """
     if df is None or len(df) == 0:
-        return "⚠️ No data loaded yet. Please upload a CSV file to get started!"
+        return "⚠️ No data loaded yet. Please upload a CSV file to get started!", None
 
     mem      = _get_memory()
     entities = extract_entities(question, df)
     q_raw    = question.lower().strip()
 
-    # Update memory with any named entities found in the question
     if entities["city"]:     mem.last_city     = entities["city"]
     if entities["product"]:  mem.last_product  = entities["product"]
     if entities["category"]: mem.last_category = entities["category"]
 
-    # Resolve pronouns / vague references
-    q = resolve_references(q_raw, mem)
-
+    q   = resolve_references(q_raw, mem)
     ctx = _bb_context(df)
 
     for handler in _BB_HANDLERS:
         result = handler(q, ctx, df, mem)
         if result is not None:
             _save_memory(mem)
-            return result
+            return result   # (text, fig)
 
     _save_memory(mem)
     return _bb_fallback(q, ctx, df, mem)
@@ -1665,10 +1820,196 @@ with col2:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# ── BLINKBOT CHATBOT UI  (Phase 2 — memory-aware)
+# ── DEEP ANALYTICS 1: PARETO / 80-20 ANALYSIS
+# ══════════════════════════════════════════════════════════════════════════════════
+st.markdown('<div class="section-head">📐 PARETO ANALYSIS — 80/20 REVENUE RULE</div>', unsafe_allow_html=True)
+prod_rev_sorted = df.groupby("Product Name")["Total Revenue"].sum().sort_values(ascending=False)
+cumulative_pct  = (prod_rev_sorted.cumsum() / prod_rev_sorted.sum() * 100).values
+pareto_x        = list(range(1, len(prod_rev_sorted) + 1))
+cutoff_idx      = next((i for i, v in enumerate(cumulative_pct) if v >= 80), len(pareto_x)-1)
+cutoff_products = cutoff_idx + 1
+
+col1, col2 = st.columns([3, 1])
+with col1:
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=prod_rev_sorted.index.tolist(), y=prod_rev_sorted.values,
+        name="Revenue", marker_color="#6366f1", marker_line_width=0, opacity=0.75,
+        yaxis="y",
+    ))
+    fig.add_trace(go.Scatter(
+        x=prod_rev_sorted.index.tolist(), y=cumulative_pct,
+        name="Cumulative %", mode="lines+markers",
+        line=dict(color="#06b6d4", width=2), marker=dict(size=5),
+        yaxis="y2",
+    ))
+    fig.add_hline(y=80, line_dash="dash", line_color="#f59e0b",
+                  annotation_text="80% Revenue Threshold", annotation_font_color="#f59e0b",
+                  annotation_position="top right")
+    fig.add_vrect(
+        x0=-0.5, x1=cutoff_idx + 0.5,
+        fillcolor="rgba(99,102,241,.06)", line_width=0,
+        annotation_text=f"Top {cutoff_products} products",
+        annotation_position="top left", annotation_font_color="#a5b4fc",
+    )
+    fig.update_layout(
+        **PLOTLY_LAYOUT,
+        title=dict(text=f"Pareto Chart — Top {cutoff_products} of {len(prod_rev_sorted)} products drive 80% of revenue",
+                   font=dict(color="#f0f4ff", size=12)),
+        height=300,
+        yaxis =dict(title="Revenue (₹)", tickprefix="₹", gridcolor="rgba(99,130,255,.06)"),
+        yaxis2=dict(title="Cumulative %", overlaying="y", side="right",
+                    range=[0,105], ticksuffix="%", showgrid=False),
+        legend=dict(orientation="h", y=1.1),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+with col2:
+    pareto_pct = cutoff_products / len(prod_rev_sorted) * 100
+    rev_80     = prod_rev_sorted.iloc[:cutoff_products].sum()
+    st.markdown(f"""
+    <div style="background:#0d1628;border:1px solid rgba(99,130,255,.15);border-radius:12px;padding:18px;text-align:center">
+      <div style="font-size:10px;color:#4a5a7a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">80/20 Rule</div>
+      <div style="font-size:36px;font-weight:700;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">{pareto_pct:.0f}%</div>
+      <div style="font-size:11px;color:#8899bb;margin-top:4px">of products drive</div>
+      <div style="font-size:22px;font-weight:700;color:#10b981;margin:6px 0">80%</div>
+      <div style="font-size:11px;color:#8899bb">of revenue</div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(99,130,255,.1)">
+        <div class="stat-row"><span class="stat-label">Key SKUs</span><span class="stat-value">{cutoff_products}</span></div>
+        <div class="stat-row"><span class="stat-label">Their revenue</span><span class="stat-value">{fmt(rev_80)}</span></div>
+        <div class="stat-row"><span class="stat-label">Total SKUs</span><span class="stat-value">{len(prod_rev_sorted)}</span></div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── DEEP ANALYTICS 2: SIMULATED CATEGORY TREND
+# ══════════════════════════════════════════════════════════════════════════════════
+st.markdown('<div class="section-head">📈 CATEGORY REVENUE TREND — SIMULATED WEEKLY</div>', unsafe_allow_html=True)
+np.random.seed(7)
+trend_weeks   = [f"W{i}" for i in range(1, 9)]
+categories_present = df["Category"].unique().tolist()
+cat_base_rev  = df.groupby("Category")["Total Revenue"].mean()
+
+fig = go.Figure()
+for cat in categories_present:
+    base  = cat_base_rev.get(cat, 1000)
+    noise = np.random.normal(0, base * 0.08, 8)
+    trend = np.linspace(base * 0.85, base * 1.15, 8) + noise
+    trend = np.clip(trend, 0, None)
+    clr   = CAT_CLR.get(cat, "#6366f1")
+    fig.add_trace(go.Scatter(
+        x=trend_weeks, y=trend, name=cat, mode="lines+markers",
+        line=dict(color=clr, width=2),
+        marker=dict(size=6, color=clr),
+        fill="tozeroy", fillcolor=clr.replace("#", "rgba(").rstrip(")") + ",0.03)" if clr.startswith("#") else clr,
+    ))
+
+fig.update_layout(
+    **PLOTLY_LAYOUT,
+    title=dict(text="Simulated 8-Week Category Revenue Trend (based on current distribution)",
+               font=dict(color="#f0f4ff", size=12)),
+    height=300,
+    yaxis=dict(tickprefix="₹", title="Avg Revenue", **PLOTLY_LAYOUT["yaxis"]),
+    hovermode="x unified",
+)
+st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── DEEP ANALYTICS 3: CITY RADAR CHART
+# ══════════════════════════════════════════════════════════════════════════════════
+st.markdown('<div class="section-head">🕸️ CITY COMPETITIVE RADAR — MULTI-KPI</div>', unsafe_allow_html=True)
+
+radar_metrics = ["Revenue", "Orders", "Avg Price", "Discount%", "Profit Margin"]
+cities_present = df["City"].unique().tolist()
+
+city_radar_data = {}
+for city in cities_present:
+    cdf = df[df["City"] == city]
+    city_radar_data[city] = {
+        "Revenue":       cdf["Total Revenue"].sum(),
+        "Orders":        cdf["Orders"].sum(),
+        "Avg Price":     cdf["Current Price"].mean(),
+        "Discount%":     cdf["Discount"].mean(),
+        "Profit Margin": cdf["Profit Margin"].mean() if "Profit Margin" in cdf.columns else 0,
+    }
+
+radar_df = pd.DataFrame(city_radar_data).T
+# Normalize 0–1 per metric for radar (avoid scale dominance)
+radar_norm = radar_df.copy()
+for col in radar_norm.columns:
+    col_range = radar_norm[col].max() - radar_norm[col].min()
+    if col_range > 0:
+        radar_norm[col] = (radar_norm[col] - radar_norm[col].min()) / col_range
+    else:
+        radar_norm[col] = 0.5
+
+col1, col2 = st.columns([2, 1])
+with col1:
+    fig = go.Figure()
+    for i, city in enumerate(cities_present):
+        vals = radar_norm.loc[city].tolist()
+        vals += [vals[0]]   # close the polygon
+        cats  = radar_metrics + [radar_metrics[0]]
+        clr   = CITY_CLR.get(city, PAL[i % len(PAL)])
+        fig.add_trace(go.Scatterpolar(
+            r=vals, theta=cats, name=city,
+            fill="toself", fillcolor=clr.replace("#", "rgba(").rstrip(")") + ",0.08)" if clr.startswith("#") else clr,
+            line=dict(color=clr, width=2),
+            marker=dict(size=5),
+        ))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(visible=True, range=[0,1], gridcolor="rgba(99,130,255,.1)", tickfont=dict(size=8, color="#4a5a7a")),
+            angularaxis=dict(gridcolor="rgba(99,130,255,.1)", tickfont=dict(size=10, color="#8899bb")),
+        ),
+        font=dict(family="Inter", color="#8899bb", size=11),
+        title=dict(text="City Competitive Radar (normalized per KPI)", font=dict(color="#f0f4ff", size=12)),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
+        margin=dict(l=30, r=30, t=50, b=30),
+        height=360,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+with col2:
+    # City scorecard — rank each city by composite score
+    radar_norm["Score"] = radar_norm.mean(axis=1) * 100
+    ranked = radar_norm[["Score"]].sort_values("Score", ascending=False)
+    st.markdown("""
+    <div style="background:#0d1628;border:1px solid rgba(99,130,255,.15);border-radius:12px;padding:16px">
+      <div style="font-size:10px;font-weight:600;color:#a5b4fc;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">
+        🏆 Composite City Score
+      </div>
+    """, unsafe_allow_html=True)
+    medals_r = ["🥇","🥈","🥉"] + ["▫️"]*(len(ranked)-3)
+    for i, (city, row) in enumerate(ranked.iterrows()):
+        score = row["Score"]
+        bar_w = int(score)
+        clr   = CITY_CLR.get(city, PAL[i % len(PAL)])
+        st.markdown(f"""
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+            <span style="font-size:11px;color:#f0f4ff">{medals_r[i]} {city}</span>
+            <span style="font-size:10px;font-weight:600;color:{clr};font-family:monospace">{score:.0f}/100</span>
+          </div>
+          <div style="background:rgba(99,130,255,.08);border-radius:4px;height:5px">
+            <div style="width:{bar_w}%;background:{clr};height:5px;border-radius:4px;transition:width .3s"></div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── BLINKBOT CHATBOT UI  (Phase 3 — chart-backed)
 # ══════════════════════════════════════════════════════════════════════════════════
 
-st.markdown('<div class="section-head">🤖 BLINKBOT — AI BUSINESS ANALYST</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-head">🤖 BLINKBOT — AI BUSINESS ANALYST (CHART-BACKED)</div>', unsafe_allow_html=True)
 
 # ── Load current memory for UI display ───────────────────────────────────────────
 _ui_mem = _get_memory()
@@ -1728,19 +2069,23 @@ if "blinkbot_history" not in st.session_state:
         "role": "bot",
         "msg": (
             f"👋 **Hi! I'm BlinkBot** — your AI Business Analyst with memory.\n\n"
-            f"I've analyzed **{len(df):,} records**. I remember the context of our "
-            f"conversation, so you can ask follow-up questions like:\n"
-            f"- *'Tell me more about it'*\n"
-            f"- *'What about that city?'*\n"
-            f"- *'Compare with the worst one'*\n\n"
+            f"I've analyzed **{len(df):,} records**. I remember context between turns, so you can ask:\n"
+            f"- *'Tell me more about it'* · *'What about that city?'* · *'Compare with the worst one'*\n\n"
+            f"Every answer now comes with an **inline chart** for instant visual context. "
             f"Start with *'Give me a summary'* or ask anything!"
         ),
+        "fig_json": None,
     }]
 
 for msg in st.session_state.blinkbot_history:
     css_class = "chat-message-bot" if msg["role"] == "bot" else "chat-message-user"
     prefix    = "" if msg["role"] == "bot" else "💬 "
     st.markdown(f'<div class="{css_class}">{prefix}{msg["msg"]}</div>', unsafe_allow_html=True)
+    # Render inline chart for bot messages that have one
+    if msg["role"] == "bot" and msg.get("fig_json"):
+        fig = _fig_from_json(msg["fig_json"])
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, key=f"bb_chart_{id(msg)}")
 
 # ── Dynamic quick questions (context-aware) ───────────────────────────────────────
 st.markdown("**💡 Quick Questions:**")
@@ -1798,9 +2143,13 @@ elif clicked_quick:
     question_to_answer = clicked_quick
 
 if question_to_answer:
-    st.session_state.blinkbot_history.append({"role": "user", "msg": question_to_answer})
-    response = blinkbot_analyze(question_to_answer, df)
-    st.session_state.blinkbot_history.append({"role": "bot",  "msg": response})
+    st.session_state.blinkbot_history.append({"role": "user", "msg": question_to_answer, "fig_json": None})
+    response_text, response_fig = blinkbot_analyze(question_to_answer, df)
+    st.session_state.blinkbot_history.append({
+        "role":     "bot",
+        "msg":      response_text,
+        "fig_json": _fig_to_json(response_fig),
+    })
     st.rerun()
 
 # ── Clear chat + memory ───────────────────────────────────────────────────────────
@@ -1825,7 +2174,7 @@ if show_raw:
 # ── FOOTER ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="footer">
-  Ayush Intelligence Hub v3.0 — Phase 2 &nbsp;·&nbsp;
+  Ayush Intelligence Hub v4.0 — Phase 3 &nbsp;·&nbsp;
   Developed by <span class="dev">Ayush Mishra</span> &nbsp;·&nbsp;
   Pandas · SciPy · scikit-learn · Streamlit · Plotly
 </div>
