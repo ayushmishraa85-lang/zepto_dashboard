@@ -1,6 +1,6 @@
 """
 Zepto Sales Intelligence Dashboard — Streamlit Edition
-Deploy FREE at: https://streamlit.io/cloud
+Phase 1 Refactor: Separated calculation logic from rendering
 Developed by Ayush Mishra
 """
 
@@ -13,7 +13,12 @@ from plotly.subplots import make_subplots
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 import warnings, io, os
+
 warnings.filterwarnings("ignore")
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── PAGE CONFIG & STYLES
+# ══════════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
     page_title="Ayush Intelligence Hub",
@@ -21,13 +26,14 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 st.markdown("""
 <style>
-[data-testid="stDecoration"] {visibility: hidden;}
-[data-testid="stDeployButton"] {visibility: hidden;}
-[data-testid="stToolbarActions"] {display: none !important;}
-footer {visibility: hidden;}
-#MainMenu {visibility: hidden;}
+[data-testid="stDecoration"]   { visibility: hidden; }
+[data-testid="stDeployButton"] { visibility: hidden; }
+[data-testid="stToolbarActions"]{ display: none !important; }
+footer   { visibility: hidden; }
+#MainMenu{ visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -47,10 +53,10 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 .kpi-card:hover { transform: translateY(-2px); }
 .kpi-label { font-size: 10px; color: #4a5a7a; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 6px; }
 .kpi-value { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
-.kpi-sub { font-size: 10px; color: #4a5a7a; }
+.kpi-sub   { font-size: 10px; color: #4a5a7a; }
 .kpi-badge { display: inline-block; font-size: 9px; font-weight: 600; border-radius: 5px; padding: 2px 7px; margin-top: 4px; }
-.up { background: rgba(16,185,129,.12); color: #34d399; }
-.down { background: rgba(239,68,68,.12); color: #f87171; }
+.up   { background: rgba(16,185,129,.12);  color: #34d399; }
+.down { background: rgba(239,68,68,.12);   color: #f87171; }
 .section-head {
   font-size: 11px; font-weight: 600; color: #8899bb;
   text-transform: uppercase; letter-spacing: .1em;
@@ -63,32 +69,45 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
   border-radius: 12px; padding: 16px; height: 100%; margin-bottom: 4px;
 }
 .insight-title { font-size: 10px; font-weight: 600; color: #4a5a7a; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
-.insight-body { font-size: 12px; color: #8899bb; line-height: 1.6; }
+.insight-body  { font-size: 12px; color: #8899bb; line-height: 1.6; }
 .insight-body strong { color: #67e8f9; }
-.stat-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(99,130,255,.06); }
-.stat-label { font-size: 11px; color: #8899bb; }
-.stat-value { font-size: 11px; font-weight: 600; color: #67e8f9; font-family: monospace; }
+.stat-row  { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(99,130,255,.06); }
+.stat-label{ font-size: 11px; color: #8899bb; }
+.stat-value{ font-size: 11px; font-weight: 600; color: #67e8f9; font-family: monospace; }
 .footer { text-align: center; padding: 20px; color: #4a5a7a; font-size: 11px; border-top: 1px solid rgba(99,130,255,.08); margin-top: 30px; }
 .footer .dev { background: linear-gradient(90deg,#a5b4fc,#67e8f9); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 700; }
 .chat-message-bot {
-    background: linear-gradient(135deg, rgba(99,102,241,.1), rgba(6,182,212,.05));
-    border: 1px solid rgba(99,102,241,.2); border-radius: 12px 12px 12px 0;
-    padding: 14px 16px; margin: 8px 0; font-size: 13px; color: #e2e8f0; line-height: 1.6;
+  background: linear-gradient(135deg, rgba(99,102,241,.1), rgba(6,182,212,.05));
+  border: 1px solid rgba(99,102,241,.2); border-radius: 12px 12px 12px 0;
+  padding: 14px 16px; margin: 8px 0; font-size: 13px; color: #e2e8f0; line-height: 1.6;
 }
 .chat-message-user {
-    background: rgba(30,41,59,.8); border: 1px solid rgba(99,130,255,.15);
-    border-radius: 12px 12px 0 12px; padding: 12px 16px; margin: 8px 0;
-    font-size: 13px; color: #cbd5e1; text-align: right;
+  background: rgba(30,41,59,.8); border: 1px solid rgba(99,130,255,.15);
+  border-radius: 12px 12px 0 12px; padding: 12px 16px; margin: 8px 0;
+  font-size: 13px; color: #cbd5e1; text-align: right;
 }
-div[data-testid="metric-container"] { background: #0d1628; border: 1px solid rgba(99,130,255,.12); border-radius: 12px; padding: 12px; }
+div[data-testid="metric-container"] {
+  background: #0d1628; border: 1px solid rgba(99,130,255,.12); border-radius: 12px; padding: 12px;
+}
+.blinkbot-header {
+  background: linear-gradient(135deg, #1e1b6e, #312e81);
+  padding: 16px 20px; display: flex; align-items: center; gap: 12px;
+  border: 1px solid rgba(99,102,241,.25); border-radius: 16px; margin-bottom: 16px;
+}
 </style>
 """, unsafe_allow_html=True)
 
-PAL     = ["#6366f1","#06b6d4","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#14b8a6","#f97316","#3b82f6"]
-CAT_CLR = {"Snacks":"#6366f1","Beverages":"#06b6d4","Grocery":"#10b981","Instant Food":"#f59e0b","Confectionery":"#ec4899","Dairy":"#8b5cf6"}
-CITY_CLR= {"Delhi":"#6366f1","Mumbai":"#06b6d4","Bangalore":"#10b981","Hyderabad":"#f59e0b","Chennai":"#ef4444","Pune":"#8b5cf6"}
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── CONSTANTS
+# ══════════════════════════════════════════════════════════════════════════════════
+
+PAL      = ["#6366f1","#06b6d4","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#14b8a6","#f97316","#3b82f6"]
+CAT_CLR  = {"Snacks":"#6366f1","Beverages":"#06b6d4","Grocery":"#10b981","Instant Food":"#f59e0b","Confectionery":"#ec4899","Dairy":"#8b5cf6"}
+CITY_CLR = {"Delhi":"#6366f1","Mumbai":"#06b6d4","Bangalore":"#10b981","Hyderabad":"#f59e0b","Chennai":"#ef4444","Pune":"#8b5cf6"}
+
 PLOTLY_LAYOUT = dict(
-    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
     font=dict(family="Inter", color="#8899bb", size=11),
     margin=dict(l=10, r=10, t=30, b=10),
     xaxis=dict(gridcolor="rgba(99,130,255,.06)", linecolor="rgba(99,130,255,.1)"),
@@ -96,36 +115,39 @@ PLOTLY_LAYOUT = dict(
     legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
 )
 
-def fmt(n):
-    if pd.isna(n): return "—"
-    if n >= 1e7:  return f"₹{n/1e7:.1f}Cr"
-    if n >= 1e5:  return f"₹{n/1e5:.2f}L"
-    if n >= 1e3:  return f"₹{n/1e3:.1f}K"
+# Unit-economics cost ratios (easy to tune in one place)
+UNIT_ECON = dict(cogs=0.52, rider=0.12, packaging=0.03, gateway=0.02, promos=0.05)
+
+# Delivery simulation parameters
+DELIVERY_PARAMS = dict(mean=11.5, std=3.5, lo=5, hi=35, promise=10)
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── UTILITY / FORMATTING
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def fmt(n: float) -> str:
+    """Format a number as Indian currency shorthand."""
+    if pd.isna(n):  return "—"
+    if n >= 1e7:    return f"₹{n/1e7:.1f}Cr"
+    if n >= 1e5:    return f"₹{n/1e5:.2f}L"
+    if n >= 1e3:    return f"₹{n/1e3:.1f}K"
     return f"₹{int(n):,}"
 
-def clean(df):
-    df = df.copy()
-    df.columns = [c.strip() for c in df.columns]
-    df.dropna(how="all", inplace=True)
-    for col in ["Original Price","Current Price","Discount","Orders","Total Revenue"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    num_cols = df.select_dtypes(include="number").columns
-    df[num_cols] = df[num_cols].fillna(df[num_cols].median())
-    for col in df.select_dtypes(include="object").columns:
-        df[col] = df[col].fillna(df[col].mode()[0]).str.strip()
-    df["Profit"]        = (df["Current Price"] - df["Original Price"]) * df["Orders"]
-    df["Profit Margin"] = np.where(df["Total Revenue"] > 0, df["Profit"] / df["Total Revenue"] * 100, 0)
-    df["Price Tier"]    = pd.cut(df["Current Price"], bins=[0,60,100,140,180,np.inf],
-                                 labels=["₹20–60","₹61–100","₹101–140","₹141–180","₹181+"])
-    return df
 
-@st.cache_data
-def load_default():
-    path = os.path.join(os.path.dirname(__file__), "..", "data", "zepto_sales_dataset.csv")
-    if os.path.exists(path):
-        return clean(pd.read_csv(path))
-    csv = """Product Name,Category,City,Original Price,Current Price,Discount,Orders,Total Revenue,Influencer Active
+def pct_change_label(current: float, previous: float) -> tuple[str, bool]:
+    """Return (label, is_positive) for WoW / period comparison badges."""
+    if previous == 0:
+        return "+0.0%", True
+    chg = (current - previous) / abs(previous) * 100
+    arrow = "↑" if chg >= 0 else "↓"
+    return f"{arrow} {abs(chg):.1f}% WoW", chg >= 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── DATA LOADING & CLEANING
+# ══════════════════════════════════════════════════════════════════════════════════
+
+_FALLBACK_CSV = """Product Name,Category,City,Original Price,Current Price,Discount,Orders,Total Revenue,Influencer Active
 Britannia Cake,Snacks,Delhi,148,163,5,283,44714,No
 Britannia Cake,Snacks,Pune,81,86,10,284,21584,Yes
 Fortune Oil 1L,Grocery,Hyderabad,138,143,10,69,9177,No
@@ -156,9 +178,685 @@ Amul Milk 500ml,Dairy,Pune,169,184,10,267,46458,No
 Fortune Oil 1L,Grocery,Bangalore,143,153,0,299,45747,Yes
 Nestle Munch,Confectionery,Mumbai,195,205,0,223,45715,No
 Britannia Cake,Snacks,Delhi,148,163,5,283,44714,No"""
-    return clean(pd.read_csv(io.StringIO(csv)))
 
-# ── SIDEBAR ──────────────────────────────────────────────────────────────────────
+_NUMERIC_COLS = ["Original Price", "Current Price", "Discount", "Orders", "Total Revenue"]
+_PRICE_BINS   = [0, 60, 100, 140, 180, np.inf]
+_PRICE_LABELS = ["₹20–60", "₹61–100", "₹101–140", "₹141–180", "₹181+"]
+
+
+def clean(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize, impute, and engineer features on a raw DataFrame."""
+    df = df.copy()
+    df.columns = [c.strip() for c in df.columns]
+    df.dropna(how="all", inplace=True)
+
+    # Coerce numerics
+    for col in _NUMERIC_COLS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Impute
+    num_cols = df.select_dtypes(include="number").columns
+    df[num_cols] = df[num_cols].fillna(df[num_cols].median())
+    for col in df.select_dtypes(include="object").columns:
+        df[col] = df[col].fillna(df[col].mode()[0]).str.strip()
+
+    # Derived columns
+    df["Profit"]        = (df["Current Price"] - df["Original Price"]) * df["Orders"]
+    df["Profit Margin"] = np.where(
+        df["Total Revenue"] > 0,
+        df["Profit"] / df["Total Revenue"] * 100,
+        0,
+    )
+    df["Price Tier"] = pd.cut(
+        df["Current Price"], bins=_PRICE_BINS, labels=_PRICE_LABELS
+    )
+    return df
+
+
+@st.cache_data
+def load_default() -> pd.DataFrame:
+    """Load the dataset from disk or fall back to the embedded sample CSV."""
+    path = os.path.join(os.path.dirname(__file__), "..", "data", "zepto_sales_dataset.csv")
+    if os.path.exists(path):
+        return clean(pd.read_csv(path))
+    return clean(pd.read_csv(io.StringIO(_FALLBACK_CSV)))
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── CALCULATION FUNCTIONS  (pure — no Streamlit calls)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def compute_kpis(df: pd.DataFrame) -> dict:
+    """
+    Compute all top-level KPIs from the filtered DataFrame.
+    Returns a flat dict so rendering code never does arithmetic.
+    """
+    total_rev    = df["Total Revenue"].sum()
+    total_profit = df["Profit"].sum()
+    total_orders = df["Orders"].sum()
+    margin       = (total_profit / total_rev * 100) if total_rev else 0
+    rev_std      = df["Total Revenue"].std()
+
+    cat_rev  = df.groupby("Category")["Total Revenue"].sum().sort_values(ascending=False)
+    city_rev = df.groupby("City")["Total Revenue"].sum().sort_values(ascending=False)
+
+    return dict(
+        total_rev    = total_rev,
+        total_profit = total_profit,
+        total_orders = total_orders,
+        margin       = margin,
+        rev_std      = rev_std,
+        cat_rev      = cat_rev,
+        city_rev     = city_rev,
+        aov          = total_rev / total_orders if total_orders else 0,
+    )
+
+
+def compute_influencer_stats(df: pd.DataFrame) -> dict:
+    """
+    Compute influencer lift on revenue and orders.
+    Returns a dict with lift %, p-value, per-group means and counts.
+    """
+    has_inf = "Influencer Active" in df.columns
+    if not has_inf:
+        return dict(available=False)
+
+    grp_y = df[df["Influencer Active"] == "Yes"]
+    grp_n = df[df["Influencer Active"] == "No"]
+
+    rev_y = grp_y["Total Revenue"].mean() if len(grp_y) else 0
+    rev_n = grp_n["Total Revenue"].mean() if len(grp_n) else 0
+    rev_lift = ((rev_y - rev_n) / rev_n * 100) if rev_n > 0 else 0
+
+    ord_y = grp_y["Orders"].mean() if len(grp_y) else 0
+    ord_n = grp_n["Orders"].mean() if len(grp_n) else 0
+    ord_lift = ((ord_y - ord_n) / ord_n * 100) if ord_n > 0 else 0
+
+    _, p_inf = (
+        stats.ttest_ind(grp_y["Total Revenue"], grp_n["Total Revenue"])
+        if len(grp_y) > 1 and len(grp_n) > 1
+        else (0, 1)
+    )
+
+    return dict(
+        available   = True,
+        rev_y       = rev_y,
+        rev_n       = rev_n,
+        rev_lift    = rev_lift,
+        ord_lift    = ord_lift,
+        p_value     = p_inf,
+        significant = p_inf < 0.05,
+        count_y     = len(grp_y),
+        count_n     = len(grp_n),
+    )
+
+
+def compute_statistics(df: pd.DataFrame) -> dict:
+    """
+    Run descriptive stats, normality test, outlier detection, and correlations.
+    Returns a structured dict for the stats section renderer.
+    """
+    rev_arr  = df["Total Revenue"].values
+    z_scores = np.abs(stats.zscore(rev_arr))
+
+    outlier_mask = z_scores > 2
+    outliers     = df[outlier_mask].copy()
+    outliers["Z-Score"] = z_scores[outlier_mask].round(2)
+
+    _, p_norm    = stats.shapiro(rev_arr[:5000])
+    r_disc, p_disc = stats.pearsonr(df["Discount"], df["Orders"])
+    r_rev,  p_rev  = stats.pearsonr(df["Total Revenue"], df["Profit"])
+
+    return dict(
+        rev_arr  = rev_arr,
+        mean     = np.mean(rev_arr),
+        median   = np.median(rev_arr),
+        std      = np.std(rev_arr),
+        skewness = stats.skew(rev_arr),
+        kurtosis = stats.kurtosis(rev_arr),
+        p_norm   = p_norm,
+        is_normal= p_norm > 0.05,
+        outliers = outliers,
+        r_disc   = r_disc,
+        p_disc   = p_disc,
+        r_rev    = r_rev,
+        p_rev    = p_rev,
+        corr_matrix = df[
+            ["Original Price","Current Price","Discount","Orders","Total Revenue","Profit","Profit Margin"]
+        ].corr().round(3),
+    )
+
+
+def compute_forecast(df: pd.DataFrame) -> dict | None:
+    """
+    Fit a linear regression on product-level revenue ranking.
+    Returns a dict with the model, predictions, and metadata.
+    Returns None if there are fewer than 5 data points.
+    """
+    prod_rev = df.groupby("Product Name")["Total Revenue"].sum().sort_values().values
+    n = len(prod_rev)
+    if n < 5:
+        return None
+
+    X = np.arange(1, n + 1).reshape(-1, 1)
+    y = prod_rev.astype(float)
+
+    model      = LinearRegression().fit(X, y)
+    next_val   = max(0.0, float(model.predict([[n + 1]])[0]))
+    r2         = model.score(X, y)
+    residuals  = y - model.predict(X)
+    ci         = 1.96 * float(np.std(residuals))
+    mean_y     = float(np.mean(y))
+    growth_pct = ((next_val - mean_y) / mean_y * 100) if mean_y else 0
+
+    # Build plot-ready arrays (down-sampled for large datasets)
+    step = max(1, n // 20)
+    xs   = list(range(1, n + 1, step)) + [n + 1]
+    trend_vals   = [float(model.predict([[i]])[0]) for i in xs]
+    actual_vals  = [float(prod_rev[i - 1]) if i <= n else None for i in xs]
+
+    return dict(
+        n           = n,
+        next_val    = next_val,
+        r2          = r2,
+        ci          = ci,
+        growth_pct  = growth_pct,
+        slope       = float(model.coef_[0]),
+        xs          = xs,
+        trend_vals  = trend_vals,
+        actual_vals = actual_vals,
+        upper       = [t + ci for t in trend_vals],
+        lower       = [max(0.0, t - ci) for t in trend_vals],
+    )
+
+
+def compute_delivery_stats(n_samples: int) -> dict:
+    """
+    Simulate delivery-time data and compute performance metrics.
+    Uses DELIVERY_PARAMS constants for reproducibility.
+    """
+    np.random.seed(42)
+    p = DELIVERY_PARAMS
+    times = np.clip(np.random.normal(p["mean"], p["std"], max(n_samples, 50)), p["lo"], p["hi"])
+
+    otd_pct = float(np.mean(times <= p["promise"] + 2) * 100)
+    avg     = float(np.mean(times))
+    p90     = float(np.percentile(times, 90))
+    p50     = float(np.percentile(times, 50))
+
+    if otd_pct >= 95:
+        status, status_color = "🟢 EXCELLENT",       "#10b981"
+    elif otd_pct >= 85:
+        status, status_color = "🟡 NEEDS ATTENTION", "#f59e0b"
+    else:
+        status, status_color = "🔴 CRITICAL",        "#ef4444"
+
+    hist_counts, hist_edges = np.histogram(times, bins=12)
+    hist_centers = [(hist_edges[i] + hist_edges[i + 1]) / 2 for i in range(len(hist_counts))]
+
+    return dict(
+        times        = times,
+        otd_pct      = otd_pct,
+        avg          = avg,
+        p90          = p90,
+        p50          = p50,
+        status       = status,
+        status_color = status_color,
+        promise      = p["promise"],
+        hist_counts  = hist_counts,
+        hist_centers = hist_centers,
+    )
+
+
+def compute_unit_economics(avg_rev: float) -> dict:
+    """
+    Break down an average order's revenue into cost buckets and net profit.
+    Ratios are driven by the UNIT_ECON constants dict.
+    """
+    e = UNIT_ECON
+    costs = {k: avg_rev * v for k, v in e.items()}
+    net   = avg_rev - sum(costs.values())
+    cm    = (net / avg_rev * 100) if avg_rev > 0 else 0
+
+    return dict(
+        avg_rev    = avg_rev,
+        net_profit = net,
+        cm_pct     = cm,
+        **costs,
+    )
+
+
+def compute_inventory(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+    """
+    Simulate stock levels for the top-N products by order velocity.
+    Returns a tidy DataFrame with risk labels ready for rendering.
+    """
+    np.random.seed(123)
+    prod_velocity = df.groupby("Product Name")["Orders"].sum().sort_values(ascending=False)
+    rows = []
+
+    for prod, velocity in prod_velocity.head(top_n).items():
+        stock_left  = int(np.random.randint(5, 200))
+        daily_sales = max(1, int(velocity * 0.3))
+        days_cover  = round(stock_left / daily_sales, 1)
+
+        if days_cover < 1:
+            risk, risk_color, action = "🔴 CRITICAL", "#ef4444", "⚡ ORDER NOW"
+            bg, border = "rgba(239,68,68,.08)", "rgba(239,68,68,.3)"
+        elif days_cover < 2:
+            risk, risk_color, action = "🟡 LOW",      "#f59e0b", "📋 Plan Reorder"
+            bg, border = "rgba(245,158,11,.08)", "rgba(245,158,11,.3)"
+        else:
+            risk, risk_color, action = "🟢 OK",       "#10b981", "✅ Sufficient"
+            bg, border = "rgba(16,185,129,.06)",  "rgba(16,185,129,.2)"
+
+        rows.append(dict(
+            Product      = prod,
+            Stock_Left   = stock_left,
+            Daily_Sales  = daily_sales,
+            Days_Cover   = days_cover,
+            Risk         = risk,
+            Action       = action,
+            _color       = risk_color,
+            _bg          = bg,
+            _border      = border,
+        ))
+
+    return pd.DataFrame(rows)
+
+
+def compute_wow_metrics(kpis: dict, factor: float = 0.88) -> dict:
+    """
+    Derive last-week comparison metrics from current KPIs using a scaling factor.
+    Returns both current and previous values for each KPI.
+    """
+    prev = dict(
+        total_rev    = kpis["total_rev"]    * factor,
+        total_orders = int(kpis["total_orders"] * factor),
+        total_profit = kpis["total_profit"] * factor,
+        margin       = kpis["margin"]       * 0.95,
+    )
+    badges = {
+        k: pct_change_label(kpis[k], prev[k])
+        for k in ["total_rev", "total_profit", "margin"]
+    }
+    badges["total_orders"] = pct_change_label(kpis["total_orders"], prev["total_orders"])
+    return dict(current=kpis, previous=prev, badges=badges)
+
+
+def compute_order_defects(total_orders: int) -> dict:
+    """
+    Estimate defect breakdown from total order volume using fixed industry rates.
+    """
+    expired       = int(total_orders * 0.018)
+    missing       = int(total_orders * 0.024)
+    cancelled_oos = int(total_orders * 0.031)
+    total_defects = expired + missing + cancelled_oos
+    perfect       = total_orders - total_defects
+    odr_pct       = total_defects / total_orders * 100 if total_orders > 0 else 0
+
+    return dict(
+        total_orders  = total_orders,
+        expired       = expired,
+        missing       = missing,
+        cancelled_oos = cancelled_oos,
+        total_defects = total_defects,
+        perfect       = perfect,
+        odr_pct       = odr_pct,
+        # funnel steps
+        funnel_y = [total_orders,
+                    total_orders - expired,
+                    total_orders - expired - missing,
+                    total_orders - expired - missing - cancelled_oos,
+                    perfect],
+        funnel_labels = ["Total Orders","After Expired/Damaged",
+                         "After Missing Items","After OOS Cancels","✅ Perfect Orders"],
+    )
+
+
+def compute_ai_insights(df: pd.DataFrame, kpis: dict, inf: dict) -> list[tuple]:
+    """
+    Derive six narrative insights from the data.
+    Returns a list of (emoji, title, html_body) tuples.
+    """
+    cat_rev  = kpis["cat_rev"]
+    city_rev = kpis["city_rev"]
+    margin   = kpis["margin"]
+
+    prod_rev = df.groupby("Product Name")["Total Revenue"].sum().sort_values(ascending=False)
+
+    # Discount correlation
+    r_d, p_d = (stats.pearsonr(df["Discount"], df["Orders"])
+                if len(df) >= 5 else (0, 1))
+
+    # Best margin category
+    best_margin_cat = (
+        df.groupby("Category")["Profit Margin"].mean()
+          .sort_values(ascending=False).index[0]
+        if "Profit Margin" in df.columns and len(df) > 0 else "N/A"
+    )
+
+    city_gap_pct = (
+        (city_rev.iloc[0] - city_rev.iloc[-1]) / city_rev.iloc[-1] * 100
+        if len(city_rev) > 1 and city_rev.iloc[-1] > 0 else 0
+    )
+
+    return [
+        ("🏆", "Best Category",
+         f"<strong>{cat_rev.index[0]}</strong> drives "
+         f"{cat_rev.iloc[0]/cat_rev.sum()*100:.1f}% of total revenue "
+         f"({fmt(cat_rev.iloc[0])}). Maximize marketing budget here for peak ROI."),
+
+        ("🌍", "Regional Gap",
+         f"<strong>{city_rev.index[0]}</strong> ({fmt(city_rev.iloc[0])}) outperforms "
+         f"<strong>{city_rev.index[-1]}</strong> ({fmt(city_rev.iloc[-1])}) "
+         f"by {city_gap_pct:.0f}%. Target promotions in underperforming regions."),
+
+        ("⚡", "Influencer Lift",
+         f"Influencer-active products generate "
+         f"<strong>{inf['rev_lift']:+.1f}%</strong> more revenue. "
+         f"{'Statistically significant ✓' if inf.get('significant') else 'Not yet significant'} "
+         f"(p={inf.get('p_value', 1):.3f})."),
+
+        ("📈", "Profit Margin",
+         f"Overall margin is <strong>{margin:.1f}%</strong>. "
+         f"{best_margin_cat} has the highest avg margin."),
+
+        ("💡", "Discount Intelligence",
+         f"Discount is {'positively' if r_d > 0 else 'negatively'} correlated with orders "
+         f"(r={r_d:.3f}, p={p_d:.3f}). "
+         f"{'Discounting drives volume.' if r_d > 0 else 'Review your discount strategy.'}"),
+
+        ("🎯", "Top Product",
+         f"<strong>{prod_rev.index[0]}</strong> generates {fmt(prod_rev.iloc[0])} "
+         f"— the highest single-product revenue. "
+         f"Expand distribution and pair with influencer activation."),
+    ]
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── BLINKBOT — RESPONSE LOGIC  (dispatch-table pattern)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def _bb_context(df: pd.DataFrame) -> dict:
+    """Pre-compute all values BlinkBot might need (called once per query)."""
+    total_r  = df["Total Revenue"].sum()
+    total_o  = df["Orders"].sum()
+    total_p  = df["Profit"].sum()
+    mgn      = (total_p / total_r * 100) if total_r > 0 else 0
+    cat_r    = df.groupby("Category")["Total Revenue"].sum().sort_values(ascending=False) if "Category"     in df.columns else None
+    city_r   = df.groupby("City")["Total Revenue"].sum().sort_values(ascending=False)     if "City"         in df.columns else None
+    prod_r   = df.groupby("Product Name")["Total Revenue"].sum().sort_values(ascending=False) if "Product Name" in df.columns else None
+    best_m   = df.groupby("Category")["Profit Margin"].mean().sort_values(ascending=False) if "Profit Margin" in df.columns else None
+    inf_y_rev= df[df["Influencer Active"]=="Yes"]["Total Revenue"].mean() if "Influencer Active" in df.columns else 0
+    inf_n_rev= df[df["Influencer Active"]=="No"]["Total Revenue"].mean()  if "Influencer Active" in df.columns else 0
+    inf_lift = ((inf_y_rev - inf_n_rev) / inf_n_rev * 100) if inf_n_rev > 0 else 0
+    inf_y_ord= df[df["Influencer Active"]=="Yes"]["Orders"].mean() if "Influencer Active" in df.columns else 0
+    inf_n_ord= df[df["Influencer Active"]=="No"]["Orders"].mean()  if "Influencer Active" in df.columns else 0
+    ord_lift = ((inf_y_ord - inf_n_ord) / inf_n_ord * 100) if inf_n_ord > 0 else 0
+    disc_grp = df.groupby("Discount").agg(avg_rev=("Total Revenue","mean"), avg_orders=("Orders","mean")).reset_index() if "Discount" in df.columns else None
+
+    return dict(total_r=total_r, total_o=total_o, total_p=total_p, mgn=mgn,
+                cat_r=cat_r, city_r=city_r, prod_r=prod_r, best_m=best_m,
+                inf_y_rev=inf_y_rev, inf_n_rev=inf_n_rev, inf_lift=inf_lift,
+                ord_lift=ord_lift, disc_grp=disc_grp,
+                n_inf_y=len(df[df["Influencer Active"]=="Yes"]) if "Influencer Active" in df.columns else 0)
+
+
+def _bb_greeting(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["hello","hi","hey","namaste","hii"]): return None
+    c = ctx
+    return (
+        f"👋 **Hi! I'm BlinkBot**, your AI Business Analyst. I've analyzed **{len(df):,} records**.\n\n"
+        f"- 💰 Total Revenue: **{fmt(c['total_r'])}**\n"
+        f"- 🏆 Top Category: **{c['cat_r'].index[0] if c['cat_r'] is not None else 'N/A'}**\n"
+        f"- 📍 Top City: **{c['city_r'].index[0] if c['city_r'] is not None else 'N/A'}**\n\n"
+        f"Ask me anything!"
+    )
+
+
+def _bb_summary(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["summary","overview","analyze","brief","insights","tell me"]): return None
+    c = ctx
+    return (
+        f"**📋 Executive Summary:**\n\n"
+        f"**Revenue & Profit:**\n"
+        f"- 💰 Total Revenue: **{fmt(c['total_r'])}** | Profit: **{fmt(c['total_p'])}** ({c['mgn']:.1f}% margin)\n"
+        f"- 🛒 Total Orders: **{int(c['total_o']):,}** | Avg Order Value: **{fmt(c['total_r']/c['total_o'] if c['total_o'] else 0)}**\n\n"
+        f"**Top Performers:**\n"
+        f"- 🏆 Best Category: **{c['cat_r'].index[0] if c['cat_r'] is not None else 'N/A'}** "
+        f"({c['cat_r'].iloc[0]/c['total_r']*100:.1f}% of revenue)\n"
+        f"- 📍 Best City: **{c['city_r'].index[0] if c['city_r'] is not None else 'N/A'}** "
+        f"({fmt(c['city_r'].iloc[0]) if c['city_r'] is not None else 'N/A'})\n"
+        f"- ⭐ Best Product: **{c['prod_r'].index[0] if c['prod_r'] is not None else 'N/A'}**\n\n"
+        f"**⚠️ Alert:** {c['city_r'].index[-1] if c['city_r'] is not None else 'N/A'} is your weakest region.\n\n"
+        f"**💡 Recommendation:** Focus on {c['cat_r'].index[0] if c['cat_r'] is not None else 'your top category'} "
+        f"in {c['city_r'].index[0] if c['city_r'] is not None else 'your top city'} — this is your growth engine."
+    )
+
+
+def _bb_revenue(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["revenue","how much","earnings","sales total"]): return None
+    c = ctx
+    return (
+        f"**📊 Direct Answer:**\nTotal revenue is **{fmt(c['total_r'])}** across **{len(df):,} transactions**.\n\n"
+        f"**📈 Core Metrics:**\n"
+        f"- 🏆 Best category: **{c['cat_r'].index[0] if c['cat_r'] is not None else 'N/A'}** "
+        f"({c['cat_r'].iloc[0]/c['total_r']*100:.1f}%)\n"
+        f"- 📍 Top city: **{c['city_r'].index[0] if c['city_r'] is not None else 'N/A'}**\n"
+        f"- 💰 Profit: **{fmt(c['total_p'])}** ({c['mgn']:.1f}% margin)\n\n"
+        f"**💡 Recommendation:** Double down on **{c['cat_r'].index[0] if c['cat_r'] is not None else 'top category'}** "
+        f"in **{c['city_r'].index[0] if c['city_r'] is not None else 'top city'}** "
+        f"— allocate 30% more marketing budget here."
+    )
+
+
+def _bb_profit(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["profit","margin","net"]): return None
+    c = ctx
+    bm = c["best_m"]
+    return (
+        f"**💰 Direct Answer:**\nTotal profit is **{fmt(c['total_p'])}** with margin of **{c['mgn']:.1f}%**.\n\n"
+        f"**📈 Core Metrics:**\n"
+        f"- 🏆 Highest margin: **{bm.index[0] if bm is not None else 'N/A'}** "
+        f"({f'{bm.iloc[0]:.1f}%' if bm is not None else 'N/A'})\n"
+        f"- ⚠️ Lowest margin: **{bm.index[-1] if bm is not None else 'N/A'}** — needs review\n"
+        f"- Every ₹100 earned = ₹{c['mgn']:.0f} kept\n\n"
+        f"**💡 Recommendation:** Grow **{bm.index[0] if bm is not None else 'top category'}** volume "
+        f"— it gives the best return."
+    )
+
+
+def _bb_best_product(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["best product","top product","number one","highest selling"]): return None
+    pr = ctx["prod_r"]
+    if pr is None: return "Product data not available."
+    top3 = pr.head(3)
+    lines = "\n".join([
+        f"{['🥇','🥈','🥉'][i]} **{top3.index[i]}** — {fmt(top3.iloc[i])}"
+        for i in range(len(top3))
+    ])
+    return (
+        f"**🏆 Direct Answer:**\nYour #1 product is **{top3.index[0]}** generating **{fmt(top3.iloc[0])}**.\n\n"
+        f"{lines}\n\n"
+        f"**💡 Recommendation:** Keep **{top3.index[0]}** always in stock. "
+        f"Bundle with #2 and #3 to boost average order value."
+    )
+
+
+def _bb_worst_product(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["worst product","lowest","weakest product"]): return None
+    pr = ctx["prod_r"]
+    if pr is None: return "Product data not available."
+    worst = pr.tail(3).sort_values()
+    lines = "\n".join([
+        f"{['🔴','🟡','🟡'][i]} **{worst.index[i]}**"
+        for i in range(len(worst))
+    ])
+    return (
+        f"**⚠️ Underperforming Products:**\n"
+        f"Lowest revenue: **{worst.index[0]}** at only **{fmt(worst.iloc[0])}**.\n\n"
+        f"{lines}\n\n"
+        f"**💡 Recommendation:** Run a 30-day promotion on these. "
+        f"If no improvement, discontinue the lowest one."
+    )
+
+
+def _bb_city(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["city","region","location","where"]): return None
+    cr = ctx["city_r"]
+    if cr is None: return "City data not found."
+    ranking = "\n".join([
+        f"{i+1}. {'🟢' if i==0 else '🟡' if i<len(cr)-1 else '🔴'} **{c}** — {fmt(v)}"
+        for i,(c,v) in enumerate(cr.items())
+    ])
+    gap = ((cr.iloc[0]-cr.iloc[-1])/cr.iloc[-1]*100) if len(cr)>1 and cr.iloc[-1]>0 else 0
+    alert = f"\n\n**⚠️ Alert:** {cr.index[-1]} underperforms by **{gap:.0f}%**!" if gap > 50 else ""
+    return (
+        f"**📍 Direct Answer:**\n**{cr.index[0]}** is your strongest market with **{fmt(cr.iloc[0])}**.\n\n"
+        f"{ranking}{alert}\n\n"
+        f"**💡 Recommendation:** Replicate {cr.index[0]}'s success in {cr.index[-1]} "
+        f"— start with influencer campaigns for top 3 products."
+    )
+
+
+def _bb_category(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["category","segment","best category"]): return None
+    cat_r   = ctx["cat_r"]
+    total_r = ctx["total_r"]
+    if cat_r is None: return "Category data not available."
+    medals = ["🥇","🥈","🥉"] + ["▫️"]*(len(cat_r)-3)
+    lines  = "\n".join([
+        f"{medals[i]} **{c}** — {fmt(v)} ({v/total_r*100:.1f}%)"
+        for i,(c,v) in enumerate(cat_r.items())
+    ])
+    return (
+        f"**🏷️ Direct Answer:**\n**{cat_r.index[0]}** leads with **{fmt(cat_r.iloc[0])}** "
+        f"({cat_r.iloc[0]/total_r*100:.1f}% of total).\n\n"
+        f"{lines}\n\n"
+        f"**💡 Recommendation:** **{cat_r.index[-1]}** is weakest at {cat_r.iloc[-1]/total_r*100:.1f}%. "
+        f"Either promote it or shift budget to **{cat_r.index[0]}**."
+    )
+
+
+def _bb_influencer(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["influencer","marketing","campaign"]): return None
+    if "Influencer Active" not in df.columns: return "Influencer data not available."
+    c = ctx
+    return (
+        f"**⚡ Direct Answer:**\nInfluencer marketing generates **{c['inf_lift']:+.1f}% revenue lift**.\n\n"
+        f"- 💰 With influencer: **{fmt(c['inf_y_rev'])}** avg revenue\n"
+        f"- 💰 Without: **{fmt(c['inf_n_rev'])}** avg revenue\n"
+        f"- 📦 Order lift: **{c['ord_lift']:+.1f}%**\n"
+        f"- 🎯 Active: **{c['n_inf_y']}** of {len(df)} products\n\n"
+        f"**💡 Recommendation:** "
+        f"{'Scale up — activate influencers for ALL top-category products!' if c['inf_lift']>5 else 'Small lift — focus on micro-influencers in specific cities.'}"
+    )
+
+
+def _bb_orders(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["orders","order count","volume","how many orders"]): return None
+    c   = ctx
+    aov = c["total_r"] / c["total_o"] if c["total_o"] else 0
+    top_co = df.groupby("City")["Orders"].sum().sort_values(ascending=False) if "City" in df.columns else None
+    return (
+        f"**🛒 Direct Answer:**\n**{int(c['total_o']):,} total orders** processed.\n\n"
+        f"- 💰 Average order value: **{fmt(aov)}**\n"
+        f"- 📍 Top city by orders: **{top_co.index[0] if top_co is not None else 'N/A'}** "
+        f"({int(top_co.iloc[0]):,} orders)\n\n"
+        f"**💡 Recommendation:** Increase AOV from **{fmt(aov)}** to **{fmt(aov*1.15)}** "
+        f"with bundle deals. 15% AOV increase = 15% more revenue at zero extra cost."
+    )
+
+
+def _bb_discount(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["discount","offer","deal","promo"]): return None
+    dg = ctx["disc_grp"]
+    if dg is None: return "Discount data not available."
+    best = dg.loc[dg["avg_rev"].idxmax()]
+    lines = "\n".join([
+        f"- **{int(r.Discount)}%** → Avg Revenue: {fmt(r.avg_rev)} | Orders: {r.avg_orders:.0f}"
+        for _, r in dg.iterrows()
+    ])
+    return (
+        f"**🏷️ Direct Answer:**\nMost effective discount: **{int(best['Discount'])}%** "
+        f"generating **{fmt(best['avg_rev'])}** avg revenue.\n\n"
+        f"{lines}\n\n"
+        f"**💡 Recommendation:** Stick to **{int(best['Discount'])}%** as standard promotional rate. "
+        f"Avoid deeper discounts — they train customers to wait for sales."
+    )
+
+
+def _bb_inventory(q: str, ctx: dict, df: pd.DataFrame) -> str | None:
+    if not any(w in q for w in ["stock","inventory","reorder","shortage"]): return None
+    pr = ctx["prod_r"]
+    if pr is None: return "Product data not available."
+    top5  = pr.head(5)
+    items = "\n".join([
+        f"{i+1}. 🔴 **{p}** — {fmt(v)} revenue — Keep 50+ units"
+        for i,(p,v) in enumerate(top5.items())
+    ])
+    return (
+        f"**📦 Direct Answer:**\nTop 5 at-risk products by sales velocity:\n\n"
+        f"{items}\n\n"
+        f"**💡 Recommendation:** Set auto-reorder alerts at 20 units for top products. "
+        f"Keep **{top5.index[0]}** at 100+ units safety stock."
+    )
+
+
+def _bb_fallback(q: str, ctx: dict, df: pd.DataFrame) -> str:
+    cols_av = ", ".join(df.columns.tolist())
+    return (
+        f"🤔 I didn't catch that. I can help with:\n"
+        f"- 💰 Revenue & Profit\n- 🏆 Best/worst products\n- 📍 City performance\n"
+        f"- 🏷️ Categories\n- ⚡ Influencer impact\n- 🛒 Orders & volume\n"
+        f"- 🏷️ Discount analysis\n- 📦 Inventory alerts\n\n"
+        f"**Your columns:** {cols_av}\n\n"
+        f"Try: *'Give me a summary'* or *'Which city is worst?'*"
+    )
+
+
+# Dispatch table — ordered from most specific to fallback
+_BB_HANDLERS = [
+    _bb_greeting,
+    _bb_summary,
+    _bb_revenue,
+    _bb_profit,
+    _bb_best_product,
+    _bb_worst_product,
+    _bb_city,
+    _bb_category,
+    _bb_influencer,
+    _bb_orders,
+    _bb_discount,
+    _bb_inventory,
+]
+
+
+def blinkbot_analyze(question: str, df: pd.DataFrame) -> str:
+    """
+    Route the user's question through the handler dispatch table.
+    Returns a markdown-formatted answer string.
+    """
+    if df is None or len(df) == 0:
+        return "⚠️ No data loaded yet. Please upload a CSV file to get started!"
+
+    q   = question.lower().strip()
+    ctx = _bb_context(df)
+
+    for handler in _BB_HANDLERS:
+        result = handler(q, ctx, df)
+        if result is not None:
+            return result
+
+    return _bb_fallback(q, ctx, df)
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── SIDEBAR
+# ══════════════════════════════════════════════════════════════════════════════════
+
 with st.sidebar:
     st.markdown("""
     <div style="text-align:center;padding:12px 0 20px">
@@ -167,10 +865,11 @@ with st.sidebar:
       <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v2.0</div>
     </div>
     """, unsafe_allow_html=True)
+
     st.markdown("#### 📂 Data Source")
     uploaded = st.file_uploader("Upload your CSV", type=["csv"], help="Replace the default dataset")
     st.markdown("---")
-    st.markdown("#### 🔍 Filters")
+
     df_raw = load_default()
     if uploaded:
         try:
@@ -178,19 +877,24 @@ with st.sidebar:
             st.success(f"✅ Loaded {len(df_raw):,} rows")
         except Exception as e:
             st.error(f"❌ {e}")
+
+    st.markdown("#### 🔍 Filters")
     cities     = ["All"] + sorted(df_raw["City"].unique())
     categories = ["All"] + sorted(df_raw["Category"].unique())
     products   = ["All"] + sorted(df_raw["Product Name"].unique())
+
     sel_city = st.selectbox("City / Region", cities)
     sel_cat  = st.selectbox("Category",      categories)
     sel_inf  = st.selectbox("Influencer",    ["All", "Yes", "No"])
     sel_prod = st.selectbox("Product",       products)
     search   = st.text_input("Search product", placeholder="e.g. Maggi...")
+
     st.markdown("---")
     st.markdown("#### ⚙️ Settings")
     auto_refresh = st.checkbox("Auto Refresh (30s)", value=False)
-    show_raw     = st.checkbox("Show Raw Data Table", value=False)
+    show_raw     = st.checkbox("Show Raw Data Table",      value=False)
     show_stats   = st.checkbox("Show Statistical Analysis", value=True)
+
     st.markdown("---")
     st.markdown("""
     <div style="font-size:10px;color:#4a5a7a;text-align:center">
@@ -199,7 +903,11 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-# ── FILTERS ──────────────────────────────────────────────────────────────────────
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── FILTERS
+# ══════════════════════════════════════════════════════════════════════════════════
+
 df = df_raw.copy()
 if sel_city != "All": df = df[df["City"]              == sel_city]
 if sel_cat  != "All": df = df[df["Category"]          == sel_cat]
@@ -207,7 +915,11 @@ if sel_inf  != "All": df = df[df["Influencer Active"] == sel_inf]
 if sel_prod != "All": df = df[df["Product Name"]      == sel_prod]
 if search:            df = df[df["Product Name"].str.contains(search, case=False, na=False)]
 
-# ── HEADER ───────────────────────────────────────────────────────────────────────
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── PRE-COMPUTE EVERYTHING  (all math happens here, before any rendering)
+# ══════════════════════════════════════════════════════════════════════════════════
+
 st.markdown("""
 <div style="background:linear-gradient(135deg,#0d1628,#121d35);border:1px solid rgba(99,130,255,.12);border-radius:16px;padding:20px 24px;margin-bottom:20px">
   <h1 style="margin:0;font-size:22px;font-weight:700;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
@@ -223,27 +935,35 @@ if df.empty:
     st.warning("⚠️ No data matches your filters. Please adjust the filters.")
     st.stop()
 
-# ── KPI CALCULATIONS ─────────────────────────────────────────────────────────────
-total_rev    = df["Total Revenue"].sum()
-total_profit = df["Profit"].sum()
-total_orders = df["Orders"].sum()
-margin       = (total_profit / total_rev * 100) if total_rev else 0
-cat_rev      = df.groupby("Category")["Total Revenue"].sum().sort_values(ascending=False)
-city_rev     = df.groupby("City")["Total Revenue"].sum().sort_values(ascending=False)
-rev_std      = df["Total Revenue"].std()
+# ── Run all calculations ──────────────────────────────────────────────────────────
+kpis       = compute_kpis(df)
+inf_stats  = compute_influencer_stats(df)
+stats_data = compute_statistics(df) if show_stats and len(df) >= 5 else None
+forecast   = compute_forecast(df)
+delivery   = compute_delivery_stats(len(df))
+unit_econ  = compute_unit_economics(float(df["Total Revenue"].mean()) if len(df) > 0 else 500)
+inventory  = compute_inventory(df)
+defects    = compute_order_defects(int(kpis["total_orders"]))
+wow        = compute_wow_metrics(kpis)
+insights   = compute_ai_insights(df, kpis, inf_stats if inf_stats["available"] else {"rev_lift":0,"p_value":1,"significant":False})
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── RENDERING STARTS HERE  (zero calculations below)
+# ══════════════════════════════════════════════════════════════════════════════════
 
 # ── KPI CARDS ────────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-head">KEY PERFORMANCE INDICATORS</div>', unsafe_allow_html=True)
 c1,c2,c3,c4,c5,c6 = st.columns(6)
-kpis = [
-    (c1,"💰","Total Revenue",   fmt(total_rev),                                                 f"σ = {fmt(rev_std)}",            "#a5b4fc","↑ +12.4%","up"),
-    (c2,"📈","Total Profit",    fmt(total_profit),                                              "Net margin earnings",             "#6ee7b7","↑ +8.1%", "up"),
-    (c3,"🛒","Total Orders",    f"{int(total_orders):,}",                                       "Units sold",                      "#fcd34d","↑ +5.3%", "up"),
-    (c4,"%", "Profit Margin",   f"{margin:.1f}%",                                               "Revenue to profit ratio",         "#fca5a5","↑ +2.1%", "up"),
-    (c5,"⭐","Top Category",    cat_rev.index[0]  if len(cat_rev)  else "—",                   fmt(cat_rev.iloc[0])  if len(cat_rev)  else "—", "#67e8f9","Leader","up"),
-    (c6,"📍","Top Region",      city_rev.index[0] if len(city_rev) else "—",                   fmt(city_rev.iloc[0]) if len(city_rev) else "—", "#c4b5fd","Leader","up"),
+kpi_rows = [
+    (c1,"💰","Total Revenue",   fmt(kpis["total_rev"]),                     f"σ = {fmt(kpis['rev_std'])}",         "#a5b4fc","↑ +12.4%","up"),
+    (c2,"📈","Total Profit",    fmt(kpis["total_profit"]),                  "Net margin earnings",                  "#6ee7b7","↑ +8.1%", "up"),
+    (c3,"🛒","Total Orders",    f"{int(kpis['total_orders']):,}",           "Units sold",                           "#fcd34d","↑ +5.3%", "up"),
+    (c4,"%", "Profit Margin",   f"{kpis['margin']:.1f}%",                  "Revenue to profit ratio",              "#fca5a5","↑ +2.1%", "up"),
+    (c5,"⭐","Top Category",    kpis["cat_rev"].index[0]  if len(kpis["cat_rev"])  else "—", fmt(kpis["cat_rev"].iloc[0])  if len(kpis["cat_rev"])  else "—", "#67e8f9","Leader","up"),
+    (c6,"📍","Top Region",      kpis["city_rev"].index[0] if len(kpis["city_rev"]) else "—", fmt(kpis["city_rev"].iloc[0]) if len(kpis["city_rev"]) else "—", "#c4b5fd","Leader","up"),
 ]
-for col, icon, label, val, sub, clr, badge, cls in kpis:
+for col, icon, label, val, sub, clr, badge, cls in kpi_rows:
     with col:
         st.markdown(f"""
         <div class="kpi-card">
@@ -320,10 +1040,17 @@ with col1:
     fig.update_yaxes(tickformat=",.0f", tickprefix="₹")
     st.plotly_chart(fig, use_container_width=True)
 with col2:
-    disc_data = df.groupby("Discount").agg(Avg_Revenue=("Total Revenue","mean"), Avg_Orders=("Orders","mean"), Count=("Orders","count")).reset_index()
+    disc_data = df.groupby("Discount").agg(
+        Avg_Revenue=("Total Revenue","mean"),
+        Avg_Orders=("Orders","mean"),
+        Count=("Orders","count")
+    ).reset_index()
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Bar(x=disc_data["Discount"].astype(str)+"%", y=disc_data["Avg_Revenue"], name="Avg Revenue", marker_color="#6366f1", opacity=0.85), secondary_y=False)
-    fig.add_trace(go.Scatter(x=disc_data["Discount"].astype(str)+"%", y=disc_data["Avg_Orders"], name="Avg Orders", mode="lines+markers", line=dict(color="#06b6d4", width=2)), secondary_y=True)
+    fig.add_trace(go.Bar(x=disc_data["Discount"].astype(str)+"%", y=disc_data["Avg_Revenue"],
+                         name="Avg Revenue", marker_color="#6366f1", opacity=0.85), secondary_y=False)
+    fig.add_trace(go.Scatter(x=disc_data["Discount"].astype(str)+"%", y=disc_data["Avg_Orders"],
+                             name="Avg Orders", mode="lines+markers",
+                             line=dict(color="#06b6d4", width=2)), secondary_y=True)
     fig.update_layout(**PLOTLY_LAYOUT, title="Discount vs Revenue & Orders", title_font_color="#f0f4ff")
     fig.update_yaxes(tickprefix="₹", secondary_y=False)
     st.plotly_chart(fig, use_container_width=True)
@@ -339,24 +1066,26 @@ fig.update_traces(marker_line_width=0, opacity=0.85)
 st.plotly_chart(fig, use_container_width=True)
 
 # ── STATISTICAL ANALYSIS ─────────────────────────────────────────────────────────
-if show_stats and len(df) >= 5:
+if stats_data:
+    sd = stats_data
     st.markdown('<div class="section-head">STATISTICAL ANALYSIS</div>', unsafe_allow_html=True)
-    rev_arr  = df["Total Revenue"].values
-    z_scores = np.abs(stats.zscore(rev_arr))
-    outliers = df[z_scores > 2].copy()
-    outliers["Z-Score"] = z_scores[z_scores > 2].round(2)
-    _, p_norm = stats.shapiro(rev_arr[:5000])
-    r_disc, p_disc = stats.pearsonr(df["Discount"], df["Orders"])
-    r_rev,  p_rev  = stats.pearsonr(df["Total Revenue"], df["Profit"])
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown('<div style="background:#0d1628;border:1px solid rgba(99,130,255,.12);border-radius:12px;padding:16px"><div style="font-size:11px;font-weight:600;color:#a5b4fc;margin-bottom:10px">📊 Descriptive Statistics</div>', unsafe_allow_html=True)
-        for label, val in [("Mean Revenue", fmt(np.mean(rev_arr))), ("Median Revenue", fmt(np.median(rev_arr))), ("Std Deviation", fmt(np.std(rev_arr))), ("Skewness", f"{stats.skew(rev_arr):.3f}"), ("Kurtosis", f"{stats.kurtosis(rev_arr):.3f}"), ("Normality p", f"{p_norm:.4f}")]:
+        for label, val in [
+            ("Mean Revenue",   fmt(sd["mean"])),
+            ("Median Revenue", fmt(sd["median"])),
+            ("Std Deviation",  fmt(sd["std"])),
+            ("Skewness",       f"{sd['skewness']:.3f}"),
+            ("Kurtosis",       f"{sd['kurtosis']:.3f}"),
+            ("Normality p",    f"{sd['p_norm']:.4f}"),
+        ]:
             st.markdown(f'<div class="stat-row"><span class="stat-label">{label}</span><span class="stat-value">{val}</span></div>', unsafe_allow_html=True)
-        normal_txt = "✓ Normally distributed" if p_norm > 0.05 else "⚠ Not normally distributed"
-        normal_clr = "#34d399" if p_norm > 0.05 else "#fcd34d"
+        normal_txt = "✓ Normally distributed" if sd["is_normal"] else "⚠ Not normally distributed"
+        normal_clr = "#34d399" if sd["is_normal"] else "#fcd34d"
         st.markdown(f'<div style="margin-top:10px;font-size:10px;color:{normal_clr};background:rgba(99,130,255,.06);padding:7px 10px;border-radius:7px">{normal_txt}</div></div>', unsafe_allow_html=True)
     with c2:
+        outliers = sd["outliers"]
         st.markdown(f'<div style="background:#0d1628;border:1px solid rgba(99,130,255,.12);border-radius:12px;padding:16px"><div style="font-size:11px;font-weight:600;color:#a5b4fc;margin-bottom:10px">⚠ Outlier Detection ({len(outliers)} outliers)</div>', unsafe_allow_html=True)
         if len(outliers) > 0:
             for _, row in outliers.head(6).iterrows():
@@ -365,80 +1094,62 @@ if show_stats and len(df) >= 5:
             st.markdown('<div style="font-size:11px;color:#4a5a7a;text-align:center;padding:20px">No significant outliers</div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
     with c3:
+        r_disc, p_disc = sd["r_disc"], sd["p_disc"]
+        r_rev,  p_rev  = sd["r_rev"],  sd["p_rev"]
         st.markdown('<div style="background:#0d1628;border:1px solid rgba(99,130,255,.12);border-radius:12px;padding:16px"><div style="font-size:11px;font-weight:600;color:#a5b4fc;margin-bottom:10px">🔗 Correlation Analysis</div>', unsafe_allow_html=True)
-        for label, val in [("Discount → Orders (r)", f"{r_disc:.3f}"), ("Discount → Orders (p)", f"{p_disc:.4f}"), ("Revenue → Profit (r)", f"{r_rev:.3f}"), ("Revenue → Profit (p)", f"{p_rev:.4f}")]:
+        for label, val in [
+            ("Discount → Orders (r)", f"{r_disc:.3f}"),
+            ("Discount → Orders (p)", f"{p_disc:.4f}"),
+            ("Revenue → Profit (r)",  f"{r_rev:.3f}"),
+            ("Revenue → Profit (p)",  f"{p_rev:.4f}"),
+        ]:
             st.markdown(f'<div class="stat-row"><span class="stat-label">{label}</span><span class="stat-value">{val}</span></div>', unsafe_allow_html=True)
         for pair, r, p in [("Discount ↔ Orders", r_disc, p_disc), ("Revenue ↔ Profit", r_rev, p_rev)]:
-            sig = p < 0.05; strong = abs(r) > 0.5; direction = "positive" if r > 0 else "negative"
-            txt = f"{'Strong' if strong else 'Weak'} {direction} — {'significant ✓' if sig else 'not significant'}"
+            sig = p < 0.05; direction = "positive" if r > 0 else "negative"
+            txt = f"{'Strong' if abs(r) > 0.5 else 'Weak'} {direction} — {'significant ✓' if sig else 'not significant'}"
             clr = "#34d399" if sig else "#fcd34d"
             st.markdown(f'<div style="background:rgba(99,102,241,.07);border-radius:6px;padding:7px 10px;margin-top:6px"><div style="font-size:10px;font-weight:600;color:#a5b4fc">{pair}</div><div style="font-size:10px;color:{clr};margin-top:2px">{txt}</div></div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-    num_df = df[["Original Price","Current Price","Discount","Orders","Total Revenue","Profit","Profit Margin"]].corr().round(3)
-    fig = px.imshow(num_df, text_auto=True, color_continuous_scale=["#ef4444","#0d1628","#6366f1"], zmin=-1, zmax=1, title="Full Correlation Matrix")
+
+    fig = px.imshow(sd["corr_matrix"], text_auto=True,
+                    color_continuous_scale=["#ef4444","#0d1628","#6366f1"],
+                    zmin=-1, zmax=1, title="Full Correlation Matrix")
     fig.update_layout(**PLOTLY_LAYOUT, title_font_color="#f0f4ff", height=350)
     st.plotly_chart(fig, use_container_width=True)
 
 # ── FORECASTING ───────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-head">SALES FORECASTING — LINEAR REGRESSION</div>', unsafe_allow_html=True)
-prod_rev = df.groupby("Product Name")["Total Revenue"].sum().sort_values().values
-n = len(prod_rev)
-if n >= 5:
-    X = np.arange(1, n + 1).reshape(-1, 1); y = prod_rev
-    model = LinearRegression().fit(X, y)
-    next_val = max(0, float(model.predict([[n + 1]])[0]))
-    r2 = model.score(X, y)
-    residuals = y - model.predict(X); ci = 1.96 * np.std(residuals)
-    mean_y = np.mean(y); growth = ((next_val - mean_y) / mean_y * 100) if mean_y else 0
+if forecast:
+    fc = forecast
     col1, col2 = st.columns([2, 1])
     with col1:
-        step = max(1, n // 20); xs = list(range(1, n + 1, step)) + [n + 1]
-        actuals_plot = [float(prod_rev[i-1]) if i <= n else None for i in xs]
-        trend_plot   = [float(model.predict([[i]])[0]) for i in xs]
-        upper = [t + ci for t in trend_plot]; lower = [max(0, t - ci) for t in trend_plot]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=xs, y=upper, fill=None, mode="lines", line=dict(width=0), showlegend=False))
-        fig.add_trace(go.Scatter(x=xs, y=lower, fill="tonexty", mode="lines", line=dict(width=0), fillcolor="rgba(99,102,241,.08)", name="95% CI"))
-        fig.add_trace(go.Scatter(x=xs, y=actuals_plot, mode="lines+markers", name="Actual", line=dict(color="#6366f1", width=2), marker=dict(size=4)))
-        fig.add_trace(go.Scatter(x=xs, y=trend_plot, mode="lines", name="Trend", line=dict(color="#06b6d4", width=2, dash="dash")))
-        fig.add_trace(go.Scatter(x=[n+1], y=[next_val], mode="markers", name="Forecast", marker=dict(color="#10b981", size=12, symbol="star")))
+        fig.add_trace(go.Scatter(x=fc["xs"], y=fc["upper"], fill=None, mode="lines", line=dict(width=0), showlegend=False))
+        fig.add_trace(go.Scatter(x=fc["xs"], y=fc["lower"], fill="tonexty", mode="lines", line=dict(width=0), fillcolor="rgba(99,102,241,.08)", name="95% CI"))
+        fig.add_trace(go.Scatter(x=fc["xs"], y=fc["actual_vals"], mode="lines+markers", name="Actual", line=dict(color="#6366f1", width=2), marker=dict(size=4)))
+        fig.add_trace(go.Scatter(x=fc["xs"], y=fc["trend_vals"], mode="lines", name="Trend", line=dict(color="#06b6d4", width=2, dash="dash")))
+        fig.add_trace(go.Scatter(x=[fc["n"]+1], y=[fc["next_val"]], mode="markers", name="Forecast", marker=dict(color="#10b981", size=12, symbol="star")))
         fig.update_layout(**PLOTLY_LAYOUT, title="Revenue Forecast with Confidence Interval", title_font_color="#f0f4ff", height=280)
         fig.update_yaxes(tickformat=",.0f", tickprefix="₹")
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        clr = "#34d399" if growth >= 0 else "#f87171"
+        growth_clr = "#34d399" if fc["growth_pct"] >= 0 else "#f87171"
         st.markdown(f"""
         <div style="background:#0d1628;border:1px solid rgba(99,130,255,.12);border-radius:12px;padding:20px">
           <div style="font-size:10px;color:#4a5a7a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Forecast Value</div>
-          <div style="font-size:28px;font-weight:700;font-family:monospace;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">{fmt(next_val)}</div>
-          <div style="display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:5px;margin:8px 0;background:{'rgba(16,185,129,.12)' if growth>=0 else 'rgba(239,68,68,.12)'};color:{clr}">
-            {'↑' if growth>=0 else '↓'} {abs(growth):.1f}% vs avg
+          <div style="font-size:28px;font-weight:700;font-family:monospace;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">{fmt(fc['next_val'])}</div>
+          <div style="display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:5px;margin:8px 0;background:{'rgba(16,185,129,.12)' if fc['growth_pct']>=0 else 'rgba(239,68,68,.12)'};color:{growth_clr}">
+            {'↑' if fc['growth_pct']>=0 else '↓'} {abs(fc['growth_pct']):.1f}% vs avg
           </div>
         """, unsafe_allow_html=True)
-        for label, val in [("R² Score", f"{r2:.4f}"), ("Slope β₁", f"{model.coef_[0]:.3f}"), ("CI Band", fmt(ci))]:
+        for label, val in [("R² Score", f"{fc['r2']:.4f}"), ("Slope β₁", f"{fc['slope']:.3f}"), ("CI Band", fmt(fc["ci"]))]:
             st.markdown(f'<div class="stat-row"><span class="stat-label">{label}</span><span class="stat-value">{val}</span></div>', unsafe_allow_html=True)
-        quality = "✓ Good fit" if r2 > 0.6 else "⚠ Low R² — noisy data"
-        q_clr = "#34d399" if r2 > 0.6 else "#fcd34d"
+        quality = "✓ Good fit" if fc["r2"] > 0.6 else "⚠ Low R² — noisy data"
+        q_clr   = "#34d399" if fc["r2"] > 0.6 else "#fcd34d"
         st.markdown(f'<div style="margin-top:10px;font-size:10px;color:{q_clr};background:rgba(99,130,255,.06);padding:7px 10px;border-radius:7px">{quality}</div></div>', unsafe_allow_html=True)
 
 # ── AI INSIGHTS ───────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-head">AI BUSINESS INSIGHTS</div>', unsafe_allow_html=True)
-cat_rev2  = df.groupby("Category")["Total Revenue"].sum().sort_values(ascending=False)
-city_rev2 = df.groupby("City")["Total Revenue"].sum().sort_values(ascending=False)
-inf_y2    = df[df["Influencer Active"]=="Yes"]["Total Revenue"]
-inf_n2    = df[df["Influencer Active"]=="No"]["Total Revenue"]
-lift      = ((inf_y2.mean()-inf_n2.mean())/inf_n2.mean()*100) if len(inf_n2)>1 and inf_n2.mean()>0 else 0
-_, p_inf  = stats.ttest_ind(inf_y2, inf_n2) if len(inf_y2)>1 and len(inf_n2)>1 else (0,1)
-r_d, p_d  = stats.pearsonr(df["Discount"], df["Orders"]) if len(df)>=5 else (0,1)
-prod_rev2 = df.groupby("Product Name")["Total Revenue"].sum().sort_values(ascending=False)
-insights = [
-    ("🏆","Best Category",      f"<strong>{cat_rev2.index[0]}</strong> drives {cat_rev2.iloc[0]/cat_rev2.sum()*100:.1f}% of total revenue ({fmt(cat_rev2.iloc[0])}). Maximize marketing budget here for peak ROI."),
-    ("🌍","Regional Gap",        f"<strong>{city_rev2.index[0]}</strong> ({fmt(city_rev2.iloc[0])}) outperforms <strong>{city_rev2.index[-1]}</strong> ({fmt(city_rev2.iloc[-1])}) by {(city_rev2.iloc[0]-city_rev2.iloc[-1])/city_rev2.iloc[-1]*100:.0f}%. Target promotions in underperforming regions."),
-    ("⚡","Influencer Lift",     f"Influencer-active products generate <strong>{lift:+.1f}%</strong> more revenue. {'Statistically significant ✓' if p_inf<0.05 else 'Not yet significant'} (p={p_inf:.3f})."),
-    ("📈","Profit Margin",       f"Overall margin is <strong>{margin:.1f}%</strong>. {df.groupby('Category')['Profit Margin'].mean().sort_values(ascending=False).index[0]} has the highest avg margin."),
-    ("💡","Discount Intelligence",f"Discount is {'positively' if r_d>0 else 'negatively'} correlated with orders (r={r_d:.3f}, p={p_d:.3f}). {'Discounting drives volume.' if r_d>0 else 'Review your discount strategy.'}"),
-    ("🎯","Top Product",          f"<strong>{prod_rev2.index[0]}</strong> generates {fmt(prod_rev2.iloc[0])} — the highest single-product revenue. Expand distribution and pair with influencer activation."),
-]
 cols = st.columns(3)
 for i, (emoji, title, body) in enumerate(insights):
     with cols[i % 3]:
@@ -446,30 +1157,17 @@ for i, (emoji, title, body) in enumerate(insights):
 
 # ── WEEK OVER WEEK ────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-head">WEEK-OVER-WEEK COMPARISON</div>', unsafe_allow_html=True)
-np.random.seed(42)
-wow_factor       = 0.88
-total_rev_wow    = total_rev * wow_factor
-total_orders_wow = int(total_orders * wow_factor)
-total_profit_wow = total_profit * wow_factor
-margin_wow       = margin * 0.95
-
-def wow_badge(current, previous, is_pct=False):
-    if previous == 0: return "+0.0%", True
-    chg = (current - previous) / abs(previous) * 100
-    up = chg >= 0
-    val = fmt(current) if not is_pct else f"{current:.1f}%"
-    return f"{'↑' if up else '↓'} {abs(chg):.1f}% WoW", up
-
 w1,w2,w3,w4 = st.columns(4)
-for col, icon, label, curr, prev, is_pct in [
-    (w1,"💰","Revenue This Week",    total_rev,    total_rev_wow,    False),
-    (w2,"🛒","Orders This Week",     total_orders, total_orders_wow, False),
-    (w3,"📈","Profit This Week",     total_profit, total_profit_wow, False),
-    (w4,"%", "Margin This Week",     margin,       margin_wow,       True),
-]:
-    badge, up = wow_badge(curr, prev, is_pct=is_pct)
-    clr = "#34d399" if up else "#f87171"
-    val = fmt(curr) if not is_pct else f"{curr:.1f}%"
+wow_rows = [
+    (w1,"💰","Revenue This Week",  kpis["total_rev"],    wow["previous"]["total_rev"],    False),
+    (w2,"🛒","Orders This Week",   kpis["total_orders"], wow["previous"]["total_orders"], False),
+    (w3,"📈","Profit This Week",   kpis["total_profit"], wow["previous"]["total_profit"], False),
+    (w4,"%", "Margin This Week",   kpis["margin"],       wow["previous"]["margin"],       True),
+]
+for col, icon, label, curr, prev, is_pct in wow_rows:
+    badge, up = pct_change_label(curr, prev)
+    clr      = "#34d399" if up else "#f87171"
+    val      = fmt(curr) if not is_pct else f"{curr:.1f}%"
     prev_val = fmt(prev) if not is_pct else f"{prev:.1f}%"
     with col:
         st.markdown(f'<div class="kpi-card" style="border-color:rgba(99,130,255,.2)"><div style="font-size:18px;margin-bottom:6px">{icon}</div><div class="kpi-label">{label}</div><div class="kpi-value" style="color:#a5b4fc;font-size:20px">{val}</div><div style="font-size:10px;font-weight:600;color:{clr};margin-top:4px">{badge}</div><div class="kpi-sub">Last week: {prev_val}</div></div>', unsafe_allow_html=True)
@@ -478,140 +1176,141 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ── DELIVERY PERFORMANCE ──────────────────────────────────────────────────────────
 st.markdown('<div class="section-head">🚀 DELIVERY PERFORMANCE</div>', unsafe_allow_html=True)
+dl = delivery
 col1, col2, col3 = st.columns(3)
-np.random.seed(42)
-n_orders       = max(len(df), 50)
-delivery_times = np.clip(np.random.normal(11.5, 3.5, n_orders), 5, 35)
-promised_time  = 10
-otd_pct        = float(np.mean(delivery_times <= promised_time + 2) * 100)
-avg_time       = float(np.mean(delivery_times))
-p90_time       = float(np.percentile(delivery_times, 90))
-p50_time       = float(np.percentile(delivery_times, 50))
 with col1:
-    gauge_color   = "#10b981" if otd_pct >= 95 else "#f59e0b" if otd_pct >= 85 else "#ef4444"
-    traffic_light = "🟢 EXCELLENT" if otd_pct >= 95 else "🟡 NEEDS ATTENTION" if otd_pct >= 85 else "🔴 CRITICAL"
-    fig = go.Figure(go.Indicator(mode="gauge+number", value=otd_pct,
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number", value=dl["otd_pct"],
         title={"text":"On-Time Delivery %","font":{"color":"#8899bb","size":13}},
-        number={"suffix":"%","font":{"color":gauge_color,"size":28}},
-        gauge={"axis":{"range":[0,100],"tickcolor":"#4a5a7a"},"bar":{"color":gauge_color},"bgcolor":"#0d1628",
-               "steps":[{"range":[0,85],"color":"rgba(239,68,68,.15)"},{"range":[85,95],"color":"rgba(245,158,11,.15)"},{"range":[95,100],"color":"rgba(16,185,129,.15)"}],
-               "threshold":{"line":{"color":"#fff","width":2},"thickness":0.75,"value":95}}))
+        number={"suffix":"%","font":{"color":dl["status_color"],"size":28}},
+        gauge={"axis":{"range":[0,100],"tickcolor":"#4a5a7a"},
+               "bar":{"color":dl["status_color"]}, "bgcolor":"#0d1628",
+               "steps":[{"range":[0,85],"color":"rgba(239,68,68,.15)"},
+                         {"range":[85,95],"color":"rgba(245,158,11,.15)"},
+                         {"range":[95,100],"color":"rgba(16,185,129,.15)"}],
+               "threshold":{"line":{"color":"#fff","width":2},"thickness":0.75,"value":95}},
+    ))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=220, margin=dict(l=20,r=20,t=40,b=10))
     st.plotly_chart(fig, use_container_width=True)
-    st.markdown(f'<div style="text-align:center;font-size:12px;font-weight:600;color:{gauge_color}">{traffic_light}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align:center;font-size:12px;font-weight:600;color:{dl["status_color"]}">{dl["status"]}</div>', unsafe_allow_html=True)
 with col2:
-    fig = go.Figure(go.Bar(x=[p50_time,avg_time,p90_time,promised_time], y=["P50","Avg","P90","Promise"],
-        orientation="h", marker_color=["#10b981","#6366f1","#ef4444","#f59e0b"], marker_line_width=0))
+    fig = go.Figure(go.Bar(
+        x=[dl["p50"],dl["avg"],dl["p90"],dl["promise"]],
+        y=["P50","Avg","P90","Promise"], orientation="h",
+        marker_color=["#10b981","#6366f1","#ef4444","#f59e0b"], marker_line_width=0,
+    ))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=220,
-        title=dict(text="Delivery Time (minutes)", font=dict(color="#f0f4ff", size=13)), margin=dict(l=10,r=40,t=40,b=10),
-        xaxis=dict(title="Minutes", gridcolor="rgba(99,130,255,.05)"), yaxis=dict(gridcolor="rgba(0,0,0,0)"))
+                      title=dict(text="Delivery Time (minutes)", font=dict(color="#f0f4ff",size=13)),
+                      margin=dict(l=10,r=40,t=40,b=10),
+                      xaxis=dict(title="Minutes",gridcolor="rgba(99,130,255,.05)"),
+                      yaxis=dict(gridcolor="rgba(0,0,0,0)"))
     st.plotly_chart(fig, use_container_width=True)
 with col3:
-    hist_data = np.histogram(delivery_times, bins=12)
-    fig = go.Figure(go.Bar(
-        x=[(hist_data[1][i]+hist_data[1][i+1])/2 for i in range(len(hist_data[0]))], y=hist_data[0],
-        marker_color=["#ef4444" if x > promised_time+2 else "#10b981" for x in [(hist_data[1][i]+hist_data[1][i+1])/2 for i in range(len(hist_data[0]))]],
-        marker_line_width=0))
-    fig.add_vline(x=promised_time, line_dash="dash", line_color="#f59e0b", annotation_text="10-min promise", annotation_font_color="#f59e0b")
+    bar_colors = ["#ef4444" if x > dl["promise"]+2 else "#10b981" for x in dl["hist_centers"]]
+    fig = go.Figure(go.Bar(x=dl["hist_centers"], y=dl["hist_counts"], marker_color=bar_colors, marker_line_width=0))
+    fig.add_vline(x=dl["promise"], line_dash="dash", line_color="#f59e0b",
+                  annotation_text="10-min promise", annotation_font_color="#f59e0b")
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=220,
-        title=dict(text="Order Distribution by Time", font=dict(color="#f0f4ff", size=13)), margin=dict(l=10,r=10,t=40,b=10),
-        xaxis=dict(title="Minutes", gridcolor="rgba(99,130,255,.05)"), yaxis=dict(gridcolor="rgba(99,130,255,.05)"))
+                      title=dict(text="Order Distribution by Time", font=dict(color="#f0f4ff",size=13)),
+                      margin=dict(l=10,r=10,t=40,b=10),
+                      xaxis=dict(title="Minutes",gridcolor="rgba(99,130,255,.05)"),
+                      yaxis=dict(gridcolor="rgba(99,130,255,.05)"))
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── UNIT ECONOMICS ────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-head">💰 UNIT ECONOMICS — CONTRIBUTION MARGIN</div>', unsafe_allow_html=True)
+ue = unit_econ
 col1, col2 = st.columns(2)
-avg_rev = float(df["Total Revenue"].mean()) if len(df) > 0 else 500
-avg_cogs=avg_rev*0.52; avg_rider=avg_rev*0.12; avg_pkg=avg_rev*0.03; avg_gateway=avg_rev*0.02; avg_promo=avg_rev*0.05
-net_profit = avg_rev - avg_cogs - avg_rider - avg_pkg - avg_gateway - avg_promo
-contrib_margin = (net_profit / avg_rev * 100) if avg_rev > 0 else 0
 with col1:
     labels = ["Revenue","COGS","Rider Pay","Packaging","Gateway Fee","Promos","Net Profit"]
-    values = [avg_rev,-avg_cogs,-avg_rider,-avg_pkg,-avg_gateway,-avg_promo,net_profit]
-    fig = go.Figure(go.Waterfall(name="Unit Economics", orientation="v",
+    values = [ue["avg_rev"],-ue["cogs"],-ue["rider"],-ue["packaging"],-ue["gateway"],-ue["promos"],ue["net_profit"]]
+    fig = go.Figure(go.Waterfall(
+        name="Unit Economics", orientation="v",
         measure=["absolute","relative","relative","relative","relative","relative","total"],
         x=labels, y=values, text=[fmt(abs(v)) for v in values], textposition="outside",
         connector={"line":{"color":"rgba(99,130,255,.3)"}},
-        decreasing={"marker":{"color":"#ef4444"}}, increasing={"marker":{"color":"#10b981"}},
-        totals={"marker":{"color":"#6366f1"}}))
+        decreasing={"marker":{"color":"#ef4444"}},
+        increasing={"marker":{"color":"#10b981"}},
+        totals={"marker":{"color":"#6366f1"}},
+    ))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=320,
-        title=dict(text=f"Revenue → Net Profit | CM: {contrib_margin:.1f}%", font=dict(color="#f0f4ff", size=12)),
-        margin=dict(l=10,r=10,t=50,b=10), yaxis=dict(gridcolor="rgba(99,130,255,.05)"), showlegend=False)
+                      title=dict(text=f"Revenue → Net Profit | CM: {ue['cm_pct']:.1f}%", font=dict(color="#f0f4ff",size=12)),
+                      margin=dict(l=10,r=10,t=50,b=10), yaxis=dict(gridcolor="rgba(99,130,255,.05)"), showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 with col2:
     fig = go.Figure(go.Pie(
         labels=["COGS (52%)","Rider Pay (12%)","Packaging (3%)","Gateway (2%)","Promos (5%)","Net Profit (26%)"],
-        values=[avg_cogs,avg_rider,avg_pkg,avg_gateway,avg_promo,max(0,net_profit)], hole=0.6,
-        marker=dict(colors=["#6366f1","#06b6d4","#f59e0b","#8b5cf6","#ec4899","#10b981"]),
-        textinfo="label+percent", textfont=dict(size=10)))
+        values=[ue["cogs"],ue["rider"],ue["packaging"],ue["gateway"],ue["promos"],max(0,ue["net_profit"])],
+        hole=0.6, marker=dict(colors=["#6366f1","#06b6d4","#f59e0b","#8b5cf6","#ec4899","#10b981"]),
+        textinfo="label+percent", textfont=dict(size=10),
+    ))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=320,
-        title=dict(text="Cost Structure Breakdown", font=dict(color="#f0f4ff", size=13)),
-        margin=dict(l=10,r=10,t=50,b=10), legend=dict(font=dict(size=9)))
+                      title=dict(text="Cost Structure Breakdown", font=dict(color="#f0f4ff",size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10), legend=dict(font=dict(size=9)))
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── ORDER DEFECT RATE ────────────────────────────────────────────────────────────
 st.markdown('<div class="section-head">🔍 ORDER QUALITY — DEFECT RATE</div>', unsafe_allow_html=True)
+df_d = defects
 col1, col2 = st.columns(2)
-total_ord = int(total_orders)
-expired   = int(total_ord*0.018); missing = int(total_ord*0.024); cancelled_oos = int(total_ord*0.031)
-total_defects = expired+missing+cancelled_oos; perfect_orders = total_ord-total_defects
-odr_pct = total_defects/total_ord*100 if total_ord > 0 else 0
 with col1:
     fig = go.Figure(go.Funnel(
-        y=["Total Orders","After Expired/Damaged","After Missing Items","After OOS Cancels","✅ Perfect Orders"],
-        x=[total_ord, total_ord-expired, total_ord-expired-missing, total_ord-expired-missing-cancelled_oos, perfect_orders],
+        y=df_d["funnel_labels"], x=df_d["funnel_y"],
         textinfo="value+percent initial",
         marker=dict(color=["#6366f1","#8b5cf6","#f59e0b","#ef4444","#10b981"]),
-        connector=dict(line=dict(color="rgba(99,130,255,.2)", width=1))))
+        connector=dict(line=dict(color="rgba(99,130,255,.2)", width=1)),
+    ))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=300,
-        title=dict(text=f"Order Quality Funnel | ODR: {odr_pct:.1f}%", font=dict(color="#f0f4ff", size=13)),
-        margin=dict(l=10,r=10,t=50,b=10))
+                      title=dict(text=f"Order Quality Funnel | ODR: {df_d['odr_pct']:.1f}%", font=dict(color="#f0f4ff",size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10))
     st.plotly_chart(fig, use_container_width=True)
 with col2:
-    fig = go.Figure(go.Bar(x=["Expired/Damaged","Missing Items","Cancelled (OOS)"], y=[expired,missing,cancelled_oos],
+    fig = go.Figure(go.Bar(
+        x=["Expired/Damaged","Missing Items","Cancelled (OOS)"],
+        y=[df_d["expired"],df_d["missing"],df_d["cancelled_oos"]],
         marker_color=["#ef4444","#f59e0b","#8b5cf6"], marker_line_width=0,
-        text=[expired,missing,cancelled_oos], textposition="outside", textfont=dict(color="#f0f4ff")))
+        text=[df_d["expired"],df_d["missing"],df_d["cancelled_oos"]],
+        textposition="outside", textfont=dict(color="#f0f4ff"),
+    ))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=300,
-        title=dict(text="Defect Breakdown by Category", font=dict(color="#f0f4ff", size=13)),
-        margin=dict(l=10,r=10,t=50,b=10),
-        yaxis=dict(gridcolor="rgba(99,130,255,.05)"), xaxis=dict(gridcolor="rgba(0,0,0,0)"))
+                      title=dict(text="Defect Breakdown by Category", font=dict(color="#f0f4ff",size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10),
+                      yaxis=dict(gridcolor="rgba(99,130,255,.05)"), xaxis=dict(gridcolor="rgba(0,0,0,0)"))
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── INVENTORY INTELLIGENCE ────────────────────────────────────────────────────────
 st.markdown('<div class="section-head">📦 INVENTORY INTELLIGENCE — STOCK ALERTS</div>', unsafe_allow_html=True)
-prod_velocity = df.groupby("Product Name")["Orders"].sum().sort_values(ascending=False)
-np.random.seed(123)
-stock_data = []
-for prod, velocity in prod_velocity.head(10).items():
-    stock_left = int(np.random.randint(5, 200)); daily_sales = int(velocity * 0.3)
-    days_left  = stock_left / daily_sales if daily_sales > 0 else 99
-    risk       = "🔴 CRITICAL" if days_left < 1 else "🟡 LOW" if days_left < 2 else "🟢 OK"
-    risk_color = "#ef4444" if days_left < 1 else "#f59e0b" if days_left < 2 else "#10b981"
-    reorder    = "⚡ ORDER NOW" if days_left < 1 else "📋 Plan Reorder" if days_left < 2 else "✅ Sufficient"
-    stock_data.append({"Product":prod,"Stock Left":stock_left,"Daily Sales":daily_sales,"Days Cover":round(days_left,1),"Risk":risk,"Action":reorder,"_color":risk_color})
-stock_df = pd.DataFrame(stock_data)
 col1, col2 = st.columns([2, 1])
 with col1:
     st.markdown('<div style="font-size:11px;font-weight:600;color:#a5b4fc;margin-bottom:10px">⚡ Top 10 High-Risk Inventory Items</div>', unsafe_allow_html=True)
-    for _, row in stock_df.iterrows():
-        clr=row["_color"]; bg="rgba(239,68,68,.08)" if "CRITICAL" in row["Risk"] else "rgba(245,158,11,.08)" if "LOW" in row["Risk"] else "rgba(16,185,129,.06)"
-        bc="rgba(239,68,68,.3)" if "CRITICAL" in row["Risk"] else "rgba(245,158,11,.3)" if "LOW" in row["Risk"] else "rgba(16,185,129,.2)"
-        st.markdown(f'<div style="background:{bg};border:1px solid {bc};border-radius:8px;padding:10px 14px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:12px;font-weight:600;color:#f0f4ff">{row["Product"]}</div><div style="font-size:10px;color:#8899bb;margin-top:2px">Stock: {row["Stock Left"]} · Daily: {row["Daily Sales"]} · Covers: {row["Days Cover"]} days</div></div><div style="text-align:right"><div style="font-size:11px;font-weight:700;color:{clr}">{row["Risk"]}</div><div style="font-size:10px;color:{clr};margin-top:2px">{row["Action"]}</div></div></div>', unsafe_allow_html=True)
+    for _, row in inventory.iterrows():
+        st.markdown(
+            f'<div style="background:{row["_bg"]};border:1px solid {row["_border"]};border-radius:8px;padding:10px 14px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">'
+            f'<div><div style="font-size:12px;font-weight:600;color:#f0f4ff">{row["Product"]}</div>'
+            f'<div style="font-size:10px;color:#8899bb;margin-top:2px">Stock: {row["Stock_Left"]} · Daily: {row["Daily_Sales"]} · Covers: {row["Days_Cover"]} days</div></div>'
+            f'<div style="text-align:right"><div style="font-size:11px;font-weight:700;color:{row["_color"]}">{row["Risk"]}</div>'
+            f'<div style="font-size:10px;color:{row["_color"]};margin-top:2px">{row["Action"]}</div></div></div>',
+            unsafe_allow_html=True,
+        )
 with col2:
-    critical_count = len(stock_df[stock_df["Risk"].str.contains("CRITICAL")])
-    low_count      = len(stock_df[stock_df["Risk"].str.contains("LOW")])
-    ok_count       = len(stock_df[stock_df["Risk"].str.contains("OK")])
-    fig = go.Figure(go.Pie(labels=["Critical 🔴","Low Stock 🟡","OK 🟢"], values=[critical_count,low_count,ok_count],
-        hole=0.65, marker=dict(colors=["#ef4444","#f59e0b","#10b981"]), textinfo="label+value", textfont=dict(size=11)))
+    critical_count = inventory["Risk"].str.contains("CRITICAL").sum()
+    low_count      = inventory["Risk"].str.contains("LOW").sum()
+    ok_count       = inventory["Risk"].str.contains("OK").sum()
+    fig = go.Figure(go.Pie(
+        labels=["Critical 🔴","Low Stock 🟡","OK 🟢"],
+        values=[critical_count, low_count, ok_count],
+        hole=0.65, marker=dict(colors=["#ef4444","#f59e0b","#10b981"]),
+        textinfo="label+value", textfont=dict(size=11),
+    ))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=280,
-        title=dict(text="Stock Risk Distribution", font=dict(color="#f0f4ff", size=13)),
-        margin=dict(l=10,r=10,t=50,b=10), legend=dict(font=dict(size=10)))
+                      title=dict(text="Stock Risk Distribution", font=dict(color="#f0f4ff",size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10), legend=dict(font=dict(size=10)))
     st.plotly_chart(fig, use_container_width=True)
     st.markdown(f'<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:12px;text-align:center;margin-top:8px"><div style="font-size:22px;font-weight:700;color:#ef4444">{critical_count}</div><div style="font-size:10px;color:#8899bb">Products need immediate reorder</div></div>', unsafe_allow_html=True)
 
@@ -621,41 +1320,39 @@ st.markdown("<br>", unsafe_allow_html=True)
 st.markdown('<div class="section-head">👥 CUSTOMER RETENTION — NEW vs REPEAT</div>', unsafe_allow_html=True)
 col1, col2 = st.columns(2)
 with col1:
-    weeks   = ["Week 1","Week 2","Week 3","Week 4","Week 5","Week 6"]
-    new_c   = [1200,980,1100,870,1050,920]; repeat_c = [800,920,1050,1100,1200,1280]
+    weeks    = ["Week 1","Week 2","Week 3","Week 4","Week 5","Week 6"]
+    new_c    = [1200,980,1100,870,1050,920]
+    repeat_c = [800,920,1050,1100,1200,1280]
     fig = go.Figure()
     fig.add_trace(go.Bar(name="New Customers",    x=weeks, y=new_c,    marker_color="#6366f1", marker_line_width=0))
     fig.add_trace(go.Bar(name="Repeat Customers", x=weeks, y=repeat_c, marker_color="#10b981", marker_line_width=0))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=280,
-        barmode="group", title=dict(text="New vs Repeat Customers (Weekly)", font=dict(color="#f0f4ff", size=13)),
-        margin=dict(l=10,r=10,t=50,b=10), legend=dict(font=dict(size=10)),
-        yaxis=dict(gridcolor="rgba(99,130,255,.05)"), xaxis=dict(gridcolor="rgba(0,0,0,0)"))
+                      barmode="group", title=dict(text="New vs Repeat Customers (Weekly)", font=dict(color="#f0f4ff",size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10), legend=dict(font=dict(size=10)),
+                      yaxis=dict(gridcolor="rgba(99,130,255,.05)"), xaxis=dict(gridcolor="rgba(0,0,0,0)"))
     st.plotly_chart(fig, use_container_width=True)
 with col2:
     retention_matrix = [[100,68,52,41],[100,71,55,43],[100,65,48,38],[100,73,58,46]]
-    fig = go.Figure(go.Heatmap(z=retention_matrix, x=["W+0","W+1","W+2","W+3"],
-        y=["Week 1","Week 2","Week 3","Week 4"],
+    fig = go.Figure(go.Heatmap(
+        z=retention_matrix, x=["W+0","W+1","W+2","W+3"], y=["Week 1","Week 2","Week 3","Week 4"],
         colorscale=[[0,"#0d1628"],[0.4,"#312e81"],[0.7,"#4338ca"],[1,"#6366f1"]],
-        text=[[f"{v}%" for v in row] for row in retention_matrix], texttemplate="%{text}",
-        hovertemplate="Cohort: %{y}<br>Week: %{x}<br>Retention: %{text}<extra></extra>"))
+        text=[[f"{v}%" for v in row] for row in retention_matrix],
+        texttemplate="%{text}",
+        hovertemplate="Cohort: %{y}<br>Week: %{x}<br>Retention: %{text}<extra></extra>",
+    ))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="#8899bb", height=280,
-        title=dict(text="Cohort Retention Table (%)", font=dict(color="#f0f4ff", size=13)),
-        margin=dict(l=10,r=10,t=50,b=10))
+                      title=dict(text="Cohort Retention Table (%)", font=dict(color="#f0f4ff",size=13)),
+                      margin=dict(l=10,r=10,t=50,b=10))
     st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── BLINKBOT AI CHATBOT ───────────────────────────────────────────────────────────
-st.markdown('<div class="section-head">🤖 BLINKBOT — AI BUSINESS ANALYST</div>', unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── BLINKBOT CHATBOT UI
+# ══════════════════════════════════════════════════════════════════════════════════
 
-st.markdown("""
-<style>
-.blinkbot-header {
-    background: linear-gradient(135deg, #1e1b6e, #312e81);
-    padding: 16px 20px; display: flex; align-items: center; gap: 12px;
-    border: 1px solid rgba(99,102,241,.25); border-radius: 16px; margin-bottom: 16px;
-}
-</style>
+st.markdown('<div class="section-head">🤖 BLINKBOT — AI BUSINESS ANALYST</div>', unsafe_allow_html=True)
+st.markdown(f"""
 <div class="blinkbot-header">
   <div style="width:42px;height:42px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;">🤖</div>
   <div>
@@ -666,132 +1363,42 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-def blinkbot_analyze(question, data):
-    q = question.lower().strip()
-    if data is None or len(data) == 0:
-        return "⚠️ No data loaded yet. Please upload a CSV file to get started!"
-    total_r  = data["Total Revenue"].sum() if "Total Revenue" in data.columns else 0
-    total_o  = data["Orders"].sum()        if "Orders"        in data.columns else 0
-    total_p  = data["Profit"].sum()        if "Profit"        in data.columns else 0
-    mgn      = (total_p/total_r*100) if total_r > 0 else 0
-    cat_r    = data.groupby("Category")["Total Revenue"].sum().sort_values(ascending=False) if "Category"     in data.columns else None
-    city_r   = data.groupby("City")["Total Revenue"].sum().sort_values(ascending=False)     if "City"         in data.columns else None
-    prod_r   = data.groupby("Product Name")["Total Revenue"].sum().sort_values(ascending=False) if "Product Name" in data.columns else None
-    def f(n):
-        if n >= 1e7: return f"₹{n/1e7:.2f}Cr"
-        if n >= 1e5: return f"₹{n/1e5:.2f}L"
-        if n >= 1e3: return f"₹{n/1e3:.1f}K"
-        return f"₹{int(n):,}"
-
-    if any(w in q for w in ["hello","hi","hey","namaste","hii"]):
-        return f"👋 **Hi! I'm BlinkBot**, your AI Business Analyst. I've analyzed your **{len(data):,} records**.\n\n- 💰 Total Revenue: **{f(total_r)}**\n- 🏆 Top Category: **{cat_r.index[0] if cat_r is not None else 'N/A'}**\n- 📍 Top City: **{city_r.index[0] if city_r is not None else 'N/A'}**\n\nAsk me anything!"
-
-    elif any(w in q for w in ["summary","overview","analyze","brief","insights","tell me"]):
-        return f"""**📋 Executive Summary:**\n\n**Revenue & Profit:**\n- 💰 Total Revenue: **{f(total_r)}** | Profit: **{f(total_p)}** ({mgn:.1f}% margin)\n- 🛒 Total Orders: **{int(total_o):,}** | Avg Order Value: **{f(total_r/total_o if total_o>0 else 0)}**\n\n**Top Performers:**\n- 🏆 Best Category: **{cat_r.index[0] if cat_r is not None else 'N/A'}** ({f"{cat_r.iloc[0]/total_r*100:.1f}%" if cat_r is not None else 'N/A'} of revenue)\n- 📍 Best City: **{city_r.index[0] if city_r is not None else 'N/A'}** ({f(city_r.iloc[0]) if city_r is not None else 'N/A'})\n- ⭐ Best Product: **{prod_r.index[0] if prod_r is not None else 'N/A'}**\n\n**⚠️ Alert:** {city_r.index[-1] if city_r is not None else 'N/A'} is your weakest region.\n\n**💡 Recommendation:** Focus on {cat_r.index[0] if cat_r is not None else 'your top category'} in {city_r.index[0] if city_r is not None else 'your top city'} — this is your growth engine."""
-
-    elif any(w in q for w in ["revenue","how much","earnings","sales total"]):
-        return f"""**📊 Direct Answer:**\nTotal revenue is **{f(total_r)}** across **{len(data):,} transactions**.\n\n**📈 Core Metrics:**\n- 🏆 Best category: **{cat_r.index[0] if cat_r is not None else 'N/A'}** ({f"{cat_r.iloc[0]/total_r*100:.1f}%" if cat_r is not None else 'N/A'})\n- 📍 Top city: **{city_r.index[0] if city_r is not None else 'N/A'}**\n- 💰 Profit: **{f(total_p)}** ({mgn:.1f}% margin)\n\n**💡 Recommendation:** Double down on **{cat_r.index[0] if cat_r is not None else 'top category'}** in **{city_r.index[0] if city_r is not None else 'top city'}** — allocate 30% more marketing budget here."""
-
-    elif any(w in q for w in ["profit","margin","net"]):
-        best_m = data.groupby("Category")["Profit Margin"].mean().sort_values(ascending=False) if "Profit Margin" in data.columns else None
-        return f"""**💰 Direct Answer:**\nTotal profit is **{f(total_p)}** with margin of **{mgn:.1f}%**.\n\n**📈 Core Metrics:**\n- 🏆 Highest margin: **{best_m.index[0] if best_m is not None else 'N/A'}** ({f"{best_m.iloc[0]:.1f}%" if best_m is not None else 'N/A'})\n- ⚠️ Lowest margin: **{best_m.index[-1] if best_m is not None else 'N/A'}** — needs review\n- Every ₹100 earned = ₹{mgn:.0f} kept\n\n**💡 Recommendation:** Grow **{best_m.index[0] if best_m is not None else 'top category'}** volume — it gives best return."""
-
-    elif any(w in q for w in ["best product","top product","number one","highest selling"]):
-        if prod_r is not None:
-            top3 = prod_r.head(3)
-            return f"""**🏆 Direct Answer:**\nYour #1 product is **{top3.index[0]}** generating **{f(top3.iloc[0])}**.\n\n1. 🥇 **{top3.index[0]}** — {f(top3.iloc[0])}\n2. 🥈 **{top3.index[1] if len(top3)>1 else 'N/A'}** — {f(top3.iloc[1]) if len(top3)>1 else 'N/A'}\n3. 🥉 **{top3.index[2] if len(top3)>2 else 'N/A'}** — {f(top3.iloc[2]) if len(top3)>2 else 'N/A'}\n\n**💡 Recommendation:** Keep **{top3.index[0]}** always in stock. Bundle with #2 and #3 to boost average order value."""
-        return "Product data not available."
-
-    elif any(w in q for w in ["worst product","lowest","weakest product"]):
-        if prod_r is not None:
-            worst = prod_r.tail(3).sort_values()
-            return f"""**⚠️ Underperforming Products:**\nLowest revenue: **{worst.index[0]}** at only **{f(worst.iloc[0])}**.\n\n1. 🔴 **{worst.index[0]}** — {f(worst.iloc[0])}\n2. 🟡 **{worst.index[1] if len(worst)>1 else 'N/A'}**\n3. 🟡 **{worst.index[2] if len(worst)>2 else 'N/A'}**\n\n**💡 Recommendation:** Run a 30-day promotion on these. If no improvement, discontinue the lowest one."""
-        return "Product data not available."
-
-    elif any(w in q for w in ["city","region","location","where"]):
-        if city_r is not None:
-            top_c=city_r.index[0]; bot_c=city_r.index[-1]; gap=(city_r.iloc[0]-city_r.iloc[-1])/city_r.iloc[-1]*100 if city_r.iloc[-1]>0 else 0
-            ranking = "\n".join([f"{i+1}. {'🟢' if i==0 else '🟡' if i<len(city_r)-1 else '🔴'} **{c}** — {f(v)}" for i,(c,v) in enumerate(city_r.items())])
-            alert = f"\n\n**⚠️ Alert:** {bot_c} underperforms by **{gap:.0f}%**!" if gap > 50 else ""
-            return f"""**📍 Direct Answer:**\n**{top_c}** is your strongest market with **{f(city_r.iloc[0])}**.\n\n{ranking}{alert}\n\n**💡 Recommendation:** Replicate {top_c}'s success in {bot_c} — start with influencer campaigns for top 3 products."""
-        return "City data not found."
-
-    elif any(w in q for w in ["category","segment","best category"]):
-        if cat_r is not None:
-            breakdown = "\n".join([f"{'🥇' if i==0 else '🥈' if i==1 else '🥉' if i==2 else '▫️'} **{c}** — {f(v)} ({v/total_r*100:.1f}%)" for i,(c,v) in enumerate(cat_r.items())])
-            return f"""**🏷️ Direct Answer:**\n**{cat_r.index[0]}** leads with **{f(cat_r.iloc[0])}** ({cat_r.iloc[0]/total_r*100:.1f}% of total).\n\n{breakdown}\n\n**💡 Recommendation:** **{cat_r.index[-1]}** is weakest at {cat_r.iloc[-1]/total_r*100:.1f}%. Either promote it or shift budget to **{cat_r.index[0]}**."""
-        return "Category data not available."
-
-    elif any(w in q for w in ["influencer","marketing","campaign"]):
-        if "Influencer Active" in data.columns:
-            iy=data[data["Influencer Active"]=="Yes"]["Total Revenue"].mean(); inn=data[data["Influencer Active"]=="No"]["Total Revenue"].mean()
-            lft=(iy-inn)/inn*100 if inn>0 else 0
-            oy=data[data["Influencer Active"]=="Yes"]["Orders"].mean(); on=data[data["Influencer Active"]=="No"]["Orders"].mean()
-            ol=(oy-on)/on*100 if on>0 else 0
-            return f"""**⚡ Direct Answer:**\nInfluencer marketing generates **{lft:+.1f}% revenue lift**.\n\n- 💰 With influencer: **{f(iy)}** avg revenue\n- 💰 Without: **{f(inn)}** avg revenue\n- 📦 Order lift: **{ol:+.1f}%**\n- 🎯 Active: **{len(data[data["Influencer Active"]=="Yes"])}** of {len(data)} products\n\n**💡 Recommendation:** {"Scale up — activate influencers for ALL top-category products!" if lft>5 else "Small lift — focus on micro-influencers in specific cities."}"""
-        return "Influencer data not available."
-
-    elif any(w in q for w in ["orders","order count","volume","how many orders"]):
-        aov = total_r/total_o if total_o>0 else 0
-        top_co = data.groupby("City")["Orders"].sum().sort_values(ascending=False) if "City" in data.columns else None
-        return f"""**🛒 Direct Answer:**\n**{int(total_o):,} total orders** processed.\n\n- 💰 Average order value: **{f(aov)}**\n- 📍 Top city by orders: **{top_co.index[0] if top_co is not None else 'N/A'}** ({int(top_co.iloc[0]):,} orders)\n\n**💡 Recommendation:** Increase AOV from **{f(aov)}** to **{f(aov*1.15)}** with bundle deals. 15% AOV increase = 15% more revenue at zero extra cost."""
-
-    elif any(w in q for w in ["discount","offer","deal","promo"]):
-        if "Discount" in data.columns:
-            di = data.groupby("Discount").agg(avg_rev=("Total Revenue","mean"), avg_orders=("Orders","mean")).reset_index()
-            best = di.loc[di["avg_rev"].idxmax()]
-            lines = "\n".join([f"- **{int(r.Discount)}%** → Avg Revenue: {f(r.avg_rev)} | Orders: {r.avg_orders:.0f}" for _,r in di.iterrows()])
-            return f"""**🏷️ Direct Answer:**\nMost effective discount: **{int(best['Discount'])}%** generating **{f(best['avg_rev'])}** avg revenue.\n\n{lines}\n\n**💡 Recommendation:** Stick to **{int(best['Discount'])}%** as standard promotional rate. Avoid deeper discounts — they train customers to wait for sales."""
-        return "Discount data not available."
-
-    elif any(w in q for w in ["stock","inventory","reorder","shortage"]):
-        if prod_r is not None:
-            top5 = prod_r.head(5)
-            items = "\n".join([f"{i+1}. 🔴 **{p}** — {f(v)} revenue — Keep 50+ units" for i,(p,v) in enumerate(top5.items())])
-            return f"""**📦 Direct Answer:**\nTop 5 at-risk products by sales velocity:\n\n{items}\n\n**💡 Recommendation:** Set auto-reorder alerts at 20 units for top products. Keep **{top5.index[0]}** at 100+ units safety stock."""
-        return "Product data not available."
-
-    else:
-        cols_av = ", ".join(data.columns.tolist())
-        return f"""🤔 I didn't catch that. I can help with:\n- 💰 Revenue & Profit\n- 🏆 Best/worst products\n- 📍 City performance\n- 🏷️ Categories\n- ⚡ Influencer impact\n- 🛒 Orders & volume\n- 🏷️ Discount analysis\n- 📦 Inventory alerts\n\n**Your columns:** {cols_av}\n\nTry: *"Give me a summary"* or *"Which city is worst?"*"""
-
-# ── Chat History ──────────────────────────────────────────────────────────────────
 if "blinkbot_history" not in st.session_state:
-    st.session_state.blinkbot_history = [{"role":"bot","msg":f"👋 **Hi! I'm BlinkBot**, your AI Business Analyst. I've analyzed **{len(df):,} records**. Ask me anything — revenue, profit, cities, products — or say *'Give me a summary'* to start!"}]
+    st.session_state.blinkbot_history = [{
+        "role": "bot",
+        "msg": f"👋 **Hi! I'm BlinkBot**, your AI Business Analyst. I've analyzed **{len(df):,} records**. "
+               f"Ask me anything — revenue, profit, cities, products — or say *'Give me a summary'* to start!",
+    }]
 
 for msg in st.session_state.blinkbot_history:
     css_class = "chat-message-bot" if msg["role"] == "bot" else "chat-message-user"
-    prefix = "" if msg["role"] == "bot" else "💬 "
+    prefix    = "" if msg["role"] == "bot" else "💬 "
     st.markdown(f'<div class="{css_class}">{prefix}{msg["msg"]}</div>', unsafe_allow_html=True)
 
-# ── Quick Questions ───────────────────────────────────────────────────────────────
+# Quick questions
 st.markdown("**💡 Quick Questions:**")
 qcol1, qcol2, qcol3, qcol4 = st.columns(4)
-clicked_quick = None
-quick_items = [
-    ("📊 Revenue Summary",  "Give me a full business summary"),
-    ("🏆 Best Product",     "Which product is performing best?"),
-    ("📍 City Analysis",    "Which city is performing worst?"),
-    ("⚡ Influencer Impact","How is influencer marketing performing?"),
+QUICK_ITEMS = [
+    ("📊 Revenue Summary",   "Give me a full business summary"),
+    ("🏆 Best Product",      "Which product is performing best?"),
+    ("📍 City Analysis",     "Which city is performing worst?"),
+    ("⚡ Influencer Impact", "How is influencer marketing performing?"),
 ]
-with qcol1:
-    if st.button(quick_items[0][0], key="bb_q0", use_container_width=True):
-        clicked_quick = quick_items[0][1]
-with qcol2:
-    if st.button(quick_items[1][0], key="bb_q1", use_container_width=True):
-        clicked_quick = quick_items[1][1]
-with qcol3:
-    if st.button(quick_items[2][0], key="bb_q2", use_container_width=True):
-        clicked_quick = quick_items[2][1]
-with qcol4:
-    if st.button(quick_items[3][0], key="bb_q3", use_container_width=True):
-        clicked_quick = quick_items[3][1]
+clicked_quick = None
+for i, (btn_label, question) in enumerate(QUICK_ITEMS):
+    with [qcol1, qcol2, qcol3, qcol4][i]:
+        if st.button(btn_label, key=f"bb_q{i}", use_container_width=True):
+            clicked_quick = question
 
-# ── Text Input ────────────────────────────────────────────────────────────────────
+# Text input
 with st.form(key="bb_main_form", clear_on_submit=True):
     fc1, fc2 = st.columns([5, 1])
     with fc1:
-        user_input = st.text_input("Ask BlinkBot...", placeholder="e.g. What is my total profit? Which city is weakest?", label_visibility="collapsed")
+        user_input = st.text_input(
+            "Ask BlinkBot...",
+            placeholder="e.g. What is my total profit? Which city is weakest?",
+            label_visibility="collapsed",
+        )
     with fc2:
         submitted = st.form_submit_button("Ask 🤖", use_container_width=True)
 
@@ -815,7 +1422,8 @@ if len(st.session_state.blinkbot_history) > 1:
 # ── RAW DATA TABLE ────────────────────────────────────────────────────────────────
 if show_raw:
     st.markdown('<div class="section-head">RAW DATA TABLE</div>', unsafe_allow_html=True)
-    display_cols = ["Product Name","Category","City","Original Price","Current Price","Discount","Orders","Total Revenue","Profit","Profit Margin","Influencer Active"]
+    display_cols = ["Product Name","Category","City","Original Price","Current Price",
+                    "Discount","Orders","Total Revenue","Profit","Profit Margin","Influencer Active"]
     show_df = df[[c for c in display_cols if c in df.columns]].copy()
     show_df["Profit Margin"] = show_df["Profit Margin"].round(1).astype(str) + "%"
     st.dataframe(show_df, use_container_width=True, height=350)
@@ -834,5 +1442,3 @@ if auto_refresh:
     import time
     time.sleep(30)
     st.rerun()
-
-
