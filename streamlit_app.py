@@ -1418,6 +1418,40 @@ def _build_llm_system_prompt(df: pd.DataFrame, kpis: dict) -> str:
 """
 
 
+def _sanitise_messages(messages: list[dict]) -> list[dict]:
+    """
+    Clean the LLM message list before sending to Anthropic API.
+    Rules enforced:
+      1. Remove messages with empty or whitespace-only content
+      2. Remove error blinkbot messages (start with ⚠️) — they confuse the model
+      3. Ensure strict user / assistant alternation (Anthropic requirement)
+      4. Always start with a user message
+    """
+    # Step 1 — filter bad messages
+    clean = [
+        m for m in messages
+        if isinstance(m.get("content"), str)
+        and m["content"].strip()
+        and not m["content"].strip().startswith("⚠️")
+        and m.get("role") in ("user", "assistant")
+    ]
+
+    # Step 2 — enforce alternation: collapse consecutive same-role messages
+    merged: list[dict] = []
+    for msg in clean:
+        if merged and merged[-1]["role"] == msg["role"]:
+            # Merge into the previous message
+            merged[-1]["content"] += "\n" + msg["content"]
+        else:
+            merged.append({"role": msg["role"], "content": msg["content"]})
+
+    # Step 3 — must start with user
+    while merged and merged[0]["role"] != "user":
+        merged.pop(0)
+
+    return merged
+
+
 def _call_anthropic_stream(messages: list[dict], system: str, api_key: str):
     """
     Generator that streams text chunks from the Anthropic API (SSE protocol).
@@ -1443,6 +1477,9 @@ def _call_anthropic_stream(messages: list[dict], system: str, api_key: str):
         ) as resp:
             if resp.status_code == 401:
                 yield "\n\n⚠️ **Invalid API key.** Please check your key in the sidebar."
+                return
+            if resp.status_code == 400:
+                yield "\n\n⚠️ **Bad request (400).** Chat history was cleared — please ask your question again."
                 return
             if resp.status_code == 429:
                 yield "\n\n⚠️ **Rate limit hit.** Wait a moment and try again."
@@ -2410,6 +2447,9 @@ if question_to_answer:
     if use_ai_mode and api_key:
         system_prompt = _build_llm_system_prompt(df, kpis)
 
+        # Sanitise history before sending — enforces alternation, removes errors
+        clean_messages = _sanitise_messages(st.session_state.bb_messages_llm)
+
         # Show user bubble immediately, then stream bot response in-place
         st.markdown(f'<div class="chat-message-user">💬 {question_to_answer}</div>', unsafe_allow_html=True)
 
@@ -2418,9 +2458,7 @@ if question_to_answer:
         full_response      = ""
         error_occurred     = False
 
-        for chunk in _call_anthropic_stream(
-            st.session_state.bb_messages_llm, system_prompt, api_key
-        ):
+        for chunk in _call_anthropic_stream(clean_messages, system_prompt, api_key):
             full_response += chunk
             if "⚠️" in chunk:
                 error_occurred = True
@@ -2439,11 +2477,17 @@ if question_to_answer:
         if response_fig and not error_occurred:
             st.plotly_chart(response_fig, use_container_width=True, key="bb_stream_chart")
 
-        # Persist to histories
-        st.session_state.bb_messages_llm.append({"role":"assistant","content":full_response})
+        # Only store clean successful responses in LLM history
+        if not error_occurred:
+            st.session_state.bb_messages_llm.append({"role": "assistant", "content": full_response})
+        else:
+            # On error, clear corrupted LLM history so next question starts fresh
+            st.session_state.bb_messages_llm = []
+
         # Trim LLM history to avoid unbounded growth
         if len(st.session_state.bb_messages_llm) > _LLM_HISTORY_LIMIT * 2:
             st.session_state.bb_messages_llm = st.session_state.bb_messages_llm[-_LLM_HISTORY_LIMIT:]
+
         st.session_state.blinkbot_history.append({
             "role":     "bot",
             "msg":      full_response,
