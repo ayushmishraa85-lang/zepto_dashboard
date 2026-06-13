@@ -1624,15 +1624,16 @@ with st.sidebar:
             _raw_key = st.text_input(
                 "Google Gemini API Key",
                 type="password",
-                placeholder="AIzaSy...",
+                placeholder="AIzaSy... or aq...",
                 help="Free at aistudio.google.com → Get API Key — no credit card needed",
             )
             api_key = _raw_key.strip().strip('"').strip("'").strip() if _raw_key else ""
 
             _is_placeholder = api_key and (
-                "your-key"  in api_key.lower()
+                "your-key"    in api_key.lower()
                 or "your_key" in api_key.lower()
-                or not api_key.startswith("AIza")
+                or "api-key"  in api_key.lower()
+                or len(api_key) < 10
             )
 
             if api_key and not _is_placeholder:
@@ -1645,9 +1646,9 @@ with st.sidebar:
                 st.markdown("""
                 <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#f87171">
-                  ❌ Invalid key format.<br><br>
+                  ❌ Key looks invalid.<br><br>
                   Go to <strong>aistudio.google.com</strong> → Get API Key.<br>
-                  Key starts with <code>AIza</code>. Paste without quotes.
+                  Paste your key directly — no quotes, no spaces.
                 </div>""", unsafe_allow_html=True)
                 api_key = ""
             else:
