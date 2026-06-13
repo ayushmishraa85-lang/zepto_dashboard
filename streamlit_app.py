@@ -115,11 +115,12 @@ PLOTLY_LAYOUT = dict(
     legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
 )
 
-# PLOTLY_BASE — same as PLOTLY_LAYOUT but WITHOUT xaxis/yaxis keys.
-# Use this whenever update_layout() also passes its own xaxis= or yaxis=
-# to avoid Python's "duplicate keyword argument" TypeError.
+# PLOTLY_BASE — safe spread for update_layout calls that define their own axes/legend.
+# Excludes xaxis, yaxis, AND legend so callers can override them freely.
 _AXIS_DEFAULTS = dict(gridcolor="rgba(99,130,255,.06)", linecolor="rgba(99,130,255,.1)")
-PLOTLY_BASE = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("xaxis", "yaxis")}
+_LEGEND_DEFAULT = dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10))
+PLOTLY_BASE = {k: v for k, v in PLOTLY_LAYOUT.items()
+               if k not in ("xaxis", "yaxis", "legend")}
 
 # Unit-economics cost ratios (easy to tune in one place)
 UNIT_ECON = dict(cogs=0.52, rider=0.12, packaging=0.03, gateway=0.02, promos=0.05)
