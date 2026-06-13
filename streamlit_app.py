@@ -1426,7 +1426,7 @@ def _call_anthropic_stream(messages: list[dict], system: str, api_key: str):
     """
     headers = {
         "Content-Type":    "application/json",
-        "x-api-key":       api_key,
+        "x-api-key":       api_key.strip().strip('"').strip("'"),
         "anthropic-version": _ANTHROPIC_VER,
     }
     payload = {
@@ -1553,31 +1553,52 @@ with st.sidebar:
         # Try st.secrets first, fall back to text input
         secret_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
         if secret_key:
-            api_key = secret_key
+            api_key = secret_key.strip().strip('"').strip("'")
             st.markdown("""
             <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
                         border-radius:8px;padding:8px 10px;font-size:10px;color:#34d399">
               ✅ API key loaded from secrets
             </div>""", unsafe_allow_html=True)
         else:
-            api_key = st.text_input(
+            _raw_key = st.text_input(
                 "Anthropic API Key",
                 type="password",
-                placeholder="sk-ant-...",
-                help="Get yours at console.anthropic.com",
+                placeholder="sk-ant-api03-...",
+                help="Get yours at console.anthropic.com/keys — paste the key only, no quotes",
             )
-            if api_key:
+            # Sanitise: strip whitespace, accidental quotes, newlines
+            api_key = _raw_key.strip().strip('"').strip("'").strip() if _raw_key else ""
+
+            # Detect placeholder / example text
+            _is_placeholder = api_key and (
+                "your-key" in api_key.lower()
+                or "your_key" in api_key.lower()
+                or api_key == "sk-ant-api03-your-key-here"
+                or not api_key.startswith("sk-ant")
+            )
+
+            if api_key and not _is_placeholder:
                 st.markdown("""
                 <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#34d399">
                   ✅ Key set — LLM mode active
                 </div>""", unsafe_allow_html=True)
+            elif _is_placeholder:
+                st.markdown("""
+                <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);
+                            border-radius:8px;padding:8px 10px;font-size:10px;color:#f87171">
+                  ❌ That looks like placeholder text, not a real key.<br><br>
+                  Go to <strong>console.anthropic.com/keys</strong>,<br>
+                  copy your actual key (starts with <code>sk-ant-api03-</code>),<br>
+                  and paste it here <strong>without quotes</strong>.
+                </div>""", unsafe_allow_html=True)
+                api_key = ""
             else:
                 st.markdown("""
                 <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#f59e0b">
-                  ⚠️ Enter your key above to activate LLM mode.<br>
-                  Rule-based fallback is active.
+                  ⚠️ Paste your Anthropic API key above.<br>
+                  Rule-based fallback is active until then.
                 </div>""", unsafe_allow_html=True)
                 api_key = ""
         st.markdown(f"""
