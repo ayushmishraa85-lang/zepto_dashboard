@@ -118,6 +118,19 @@ PLOTLY_LAYOUT = dict(
 # PLOTLY_BASE — safe spread for update_layout calls that define their own axes/legend.
 # Excludes xaxis, yaxis, AND legend so callers can override them freely.
 _AXIS_DEFAULTS = dict(gridcolor="rgba(99,130,255,.06)", linecolor="rgba(99,130,255,.1)")
+
+
+def _hex_to_rgba(hex_color: str, alpha: float = 0.08) -> str:
+    """
+    Convert a #RRGGBB hex string to a valid plotly rgba() string.
+    Falls back to the original string if it isn't a 7-char hex color.
+    """
+    if not (isinstance(hex_color, str) and hex_color.startswith("#") and len(hex_color) == 7):
+        return hex_color
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    return f"rgba({r},{g},{b},{alpha})"
 _LEGEND_DEFAULT = dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10))
 PLOTLY_BASE = {k: v for k, v in PLOTLY_LAYOUT.items()
                if k not in ("xaxis", "yaxis", "legend")}
@@ -2116,7 +2129,7 @@ for cat in categories_present:
         x=trend_weeks, y=trend, name=cat, mode="lines+markers",
         line=dict(color=clr, width=2),
         marker=dict(size=6, color=clr),
-        fill="tozeroy", fillcolor=clr.replace("#", "rgba(").rstrip(")") + ",0.03)" if clr.startswith("#") else clr,
+        fill="tozeroy", fillcolor=_hex_to_rgba(clr, 0.03),
     ))
 
 fig.update_layout(
@@ -2170,7 +2183,7 @@ with col1:
         clr   = CITY_CLR.get(city, PAL[i % len(PAL)])
         fig.add_trace(go.Scatterpolar(
             r=vals, theta=cats, name=city,
-            fill="toself", fillcolor=clr.replace("#", "rgba(").rstrip(")") + ",0.08)" if clr.startswith("#") else clr,
+            fill="toself", fillcolor=_hex_to_rgba(clr, 0.08),
             line=dict(color=clr, width=2),
             marker=dict(size=5),
         ))
