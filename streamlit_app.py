@@ -1,6 +1,6 @@
 """
 Zepto Sales Intelligence Dashboard — Streamlit Edition
-Phase 2: Multi-turn memory, entity resolution & rich response formatting
+Phase 4: Anthropic LLM streaming · natural-language BlinkBot · chart detection
 Developed by Ayush Mishra
 """
 
@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy import stats
 from sklearn.linear_model import LinearRegression
-import warnings, io, os
+import warnings, io, os, json, requests
 
 warnings.filterwarnings("ignore")
 
@@ -1326,6 +1326,162 @@ def blinkbot_analyze(question: str, df: pd.DataFrame) -> BotReply:
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── PHASE 4 — LLM INTEGRATION  (Anthropic API · streaming · chart detection)
+# ══════════════════════════════════════════════════════════════════════════════════
+
+_ANTHROPIC_URL    = "https://api.anthropic.com/v1/messages"
+_ANTHROPIC_MODEL  = "claude-sonnet-4-6"
+_ANTHROPIC_VER    = "2023-06-01"
+_MAX_LLM_TOKENS   = 1024
+_LLM_HISTORY_LIMIT = 12   # keep last N messages to avoid ballooning context
+
+
+def _build_llm_system_prompt(df: pd.DataFrame, kpis: dict) -> str:
+    """
+    Construct a rich, data-grounded system prompt for the LLM.
+    Includes live KPIs, rankings, and strict behavioral rules.
+    Refreshed on every call so it always reflects the active filter.
+    """
+    cat_r  = kpis["cat_rev"]
+    city_r = kpis["city_rev"]
+    prod_r = df.groupby("Product Name")["Total Revenue"].sum().sort_values(ascending=False)
+
+    def _top_list(series, n=5):
+        return "\n".join([f"  {i+1}. {k}: {fmt(v)}" for i,(k,v) in enumerate(series.head(n).items())])
+
+    inf_y = df[df["Influencer Active"]=="Yes"]["Total Revenue"].mean() if "Influencer Active" in df.columns else 0
+    inf_n = df[df["Influencer Active"]=="No"]["Total Revenue"].mean()  if "Influencer Active" in df.columns else 0
+    inf_lift = ((inf_y - inf_n) / inf_n * 100) if inf_n > 0 else 0
+
+    discount_sweet = ""
+    if "Discount" in df.columns:
+        dg = df.groupby("Discount")["Total Revenue"].mean()
+        best_disc = dg.idxmax()
+        discount_sweet = f"  Optimal discount rate: {int(best_disc)}% (highest avg revenue)"
+
+    return f"""You are **BlinkBot**, the AI Business Analyst embedded in Ayush Intelligence Hub — a Zepto quick-commerce sales dashboard.
+
+## LIVE DATA SNAPSHOT  ({len(df):,} records, filters active)
+
+### Core KPIs
+- Total Revenue      : {fmt(kpis['total_rev'])}
+- Total Profit       : {fmt(kpis['total_profit'])} ({kpis['margin']:.1f}% margin)
+- Total Orders       : {int(kpis['total_orders']):,}
+- Avg Order Value    : {fmt(kpis['aov'])}
+- Revenue Std Dev    : {fmt(kpis['rev_std'])}
+
+### Top Products
+{_top_list(prod_r)}
+
+### Revenue by City
+{_top_list(city_r)}
+
+### Revenue by Category
+{_top_list(cat_r, n=len(cat_r))}
+
+### Influencer & Discount
+- Influencer lift    : {inf_lift:+.1f}% revenue uplift (active vs inactive)
+- Avg price range    : ₹{df['Current Price'].min():.0f}–₹{df['Current Price'].max():.0f}
+- Avg discount       : {df['Discount'].mean():.1f}%
+{discount_sweet}
+
+## PERSONALITY & RULES
+1. You are direct and data-driven — lead with the specific number, not a hedge
+2. Always use Indian currency format: ₹12.3L (lakhs), ₹2.1Cr (crores)
+3. Every response MUST end with one concrete 💡 Recommendation
+4. Keep answers concise (3-6 sentences) unless the user explicitly asks for detail
+5. You have full conversation context — use it for follow-up questions
+6. NEVER invent data not in the snapshot above; say "data not available" if uncertain
+7. When comparing, cite the exact gap (₹ and %)
+8. Tone: confident senior analyst, not a chatbot — no filler phrases like "Great question!"
+"""
+
+
+def _call_anthropic_stream(messages: list[dict], system: str, api_key: str):
+    """
+    Generator that streams text chunks from the Anthropic API (SSE protocol).
+    Yields plain string chunks as they arrive.
+    Falls back gracefully on any network or API error.
+    """
+    headers = {
+        "Content-Type":    "application/json",
+        "x-api-key":       api_key,
+        "anthropic-version": _ANTHROPIC_VER,
+    }
+    payload = {
+        "model":      _ANTHROPIC_MODEL,
+        "max_tokens": _MAX_LLM_TOKENS,
+        "system":     system,
+        "messages":   messages[-_LLM_HISTORY_LIMIT:],
+        "stream":     True,
+    }
+    try:
+        with requests.post(
+            _ANTHROPIC_URL, headers=headers, json=payload,
+            stream=True, timeout=45
+        ) as resp:
+            if resp.status_code == 401:
+                yield "\n\n⚠️ **Invalid API key.** Please check your key in the sidebar."
+                return
+            if resp.status_code == 429:
+                yield "\n\n⚠️ **Rate limit hit.** Wait a moment and try again."
+                return
+            if not resp.ok:
+                yield f"\n\n⚠️ **API error {resp.status_code}.** Switching to rule-based mode."
+                return
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:].strip()
+                if data_str in ("[DONE]", ""):
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    if chunk.get("type") == "content_block_delta":
+                        delta = chunk.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            yield delta.get("text", "")
+                except json.JSONDecodeError:
+                    continue
+    except requests.exceptions.Timeout:
+        yield "\n\n⚠️ **Request timed out.** The API took too long — try again."
+    except requests.exceptions.ConnectionError:
+        yield "\n\n⚠️ **Connection error.** Check network access to api.anthropic.com."
+    except Exception as exc:
+        yield f"\n\n⚠️ **Unexpected error:** {exc}"
+
+
+def _detect_chart_for_question(question: str, ctx: dict, df: pd.DataFrame) -> "go.Figure | None":
+    """
+    Lightweight keyword router that picks the most relevant chart
+    for the user's question — used alongside LLM responses.
+    """
+    q = question.lower()
+    if any(w in q for w in ["compare","vs","versus","against","city","region","where","location"]):
+        return _chart_city_ranking(ctx)
+    if any(w in q for w in ["category","segment"]):
+        return _chart_revenue_by_category(ctx)
+    if any(w in q for w in ["best product","top product","worst","lowest","product","sku","item"]):
+        return _chart_top_products(ctx)
+    if any(w in q for w in ["profit","margin","net"]):
+        return _chart_profit_margin_by_category(ctx, df)
+    if any(w in q for w in ["influencer","marketing","campaign"]):
+        return _chart_influencer_lift(ctx, df)
+    if any(w in q for w in ["orders","volume","order count"]):
+        return _chart_orders_by_city(df)
+    if any(w in q for w in ["discount","promo","offer","deal"]):
+        return _chart_discount_curve(ctx)
+    if any(w in q for w in ["summary","overview","revenue","earnings","how much"]):
+        return _chart_summary_snapshot(ctx)
+    if any(w in q for w in ["hello","hi","hey"]):
+        return _chart_revenue_by_category(ctx)
+    return None
+
+
 # ── SIDEBAR
 # ══════════════════════════════════════════════════════════════════════════════════
 
@@ -1334,7 +1490,7 @@ with st.sidebar:
     <div style="text-align:center;padding:12px 0 20px">
       <div style="width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">N</div>
       <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Nova-MS</div>
-      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v2.0</div>
+      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v4.0</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1364,8 +1520,58 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("#### ⚙️ Settings")
     auto_refresh = st.checkbox("Auto Refresh (30s)", value=False)
-    show_raw     = st.checkbox("Show Raw Data Table",      value=False)
+    show_raw     = st.checkbox("Show Raw Data Table",       value=False)
     show_stats   = st.checkbox("Show Statistical Analysis", value=True)
+
+    st.markdown("---")
+
+    # ── Phase 4: AI Mode ─────────────────────────────────────────────────────────
+    st.markdown("#### 🤖 BlinkBot AI Mode")
+    use_ai_mode = st.toggle("Enable LLM Mode", value=False, help="Use Anthropic API for natural-language answers")
+
+    if use_ai_mode:
+        # Try st.secrets first, fall back to text input
+        secret_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
+        if secret_key:
+            api_key = secret_key
+            st.markdown("""
+            <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
+                        border-radius:8px;padding:8px 10px;font-size:10px;color:#34d399">
+              ✅ API key loaded from secrets
+            </div>""", unsafe_allow_html=True)
+        else:
+            api_key = st.text_input(
+                "Anthropic API Key",
+                type="password",
+                placeholder="sk-ant-...",
+                help="Get yours at console.anthropic.com",
+            )
+            if api_key:
+                st.markdown("""
+                <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
+                            border-radius:8px;padding:8px 10px;font-size:10px;color:#34d399">
+                  ✅ Key set — LLM mode active
+                </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);
+                            border-radius:8px;padding:8px 10px;font-size:10px;color:#f59e0b">
+                  ⚠️ Enter your key above to activate LLM mode.<br>
+                  Rule-based fallback is active.
+                </div>""", unsafe_allow_html=True)
+                api_key = ""
+        st.markdown(f"""
+        <div style="font-size:9px;color:#4a5a7a;margin-top:6px">
+          Model: <span style="color:#a5b4fc;font-family:monospace">{_ANTHROPIC_MODEL}</span><br>
+          History: last {_LLM_HISTORY_LIMIT} turns · Max tokens: {_MAX_LLM_TOKENS}
+        </div>""", unsafe_allow_html=True)
+    else:
+        api_key = ""
+        st.markdown("""
+        <div style="background:rgba(99,130,255,.06);border:1px solid rgba(99,130,255,.12);
+                    border-radius:8px;padding:8px 10px;font-size:10px;color:#8899bb">
+          🔧 Rule-based mode — fast &amp; offline.<br>Toggle above to enable LLM responses.
+        </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("""
@@ -2006,13 +2212,26 @@ with col2:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# ── BLINKBOT CHATBOT UI  (Phase 3 — chart-backed)
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── BLINKBOT CHATBOT UI  (Phase 4 — LLM streaming + chart-backed)
 # ══════════════════════════════════════════════════════════════════════════════════
 
-st.markdown('<div class="section-head">🤖 BLINKBOT — AI BUSINESS ANALYST (CHART-BACKED)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-head">🤖 BLINKBOT — AI BUSINESS ANALYST</div>', unsafe_allow_html=True)
+
+# ── Pre-compute ctx once for chart detection ──────────────────────────────────────
+_bb_ctx_live = _bb_context(df)
 
 # ── Load current memory for UI display ───────────────────────────────────────────
 _ui_mem = _get_memory()
+
+# ── Mode badge ───────────────────────────────────────────────────────────────────
+mode_badge = (
+    '<span style="background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.4);'
+    'border-radius:20px;padding:3px 10px;font-size:10px;color:#a5b4fc;margin-left:8px">🧠 LLM Mode</span>'
+    if (use_ai_mode and api_key) else
+    '<span style="background:rgba(99,130,255,.08);border:1px solid rgba(99,130,255,.15);'
+    'border-radius:20px;padding:3px 10px;font-size:10px;color:#4a5a7a;margin-left:8px">🔧 Rule-based</span>'
+)
 
 # ── Header row: bot identity + live memory panel ──────────────────────────────────
 bb_head_col, bb_mem_col = st.columns([3, 2])
@@ -2023,7 +2242,7 @@ with bb_head_col:
       <div style="width:42px;height:42px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;
                   display:flex;align-items:center;justify-content:center;font-size:20px;">🤖</div>
       <div>
-        <div style="font-size:15px;font-weight:700;color:#f0f4ff">BlinkBot</div>
+        <div style="font-size:15px;font-weight:700;color:#f0f4ff">BlinkBot {mode_badge}</div>
         <div style="font-size:11px;color:#a5b4fc">Senior AI Business Analyst • Always Online</div>
       </div>
       <div style="margin-left:auto;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);
@@ -2032,13 +2251,12 @@ with bb_head_col:
     """, unsafe_allow_html=True)
 
 with bb_mem_col:
-    # ── Conversation Memory Panel ─────────────────────────────────────────────────
     mem_items = [
-        ("💬 Turns",      str(_ui_mem.turn_count)),
-        ("🧠 Last Topic", _ui_mem.last_intent   or "—"),
-        ("📍 Last City",  _ui_mem.last_city      or "—"),
-        ("⭐ Last Product",_ui_mem.last_product  or "—"),
-        ("🏷️ Last Category",_ui_mem.last_category or "—"),
+        ("💬 Turns",         str(_ui_mem.turn_count)),
+        ("🧠 Last Topic",    _ui_mem.last_intent    or "—"),
+        ("📍 Last City",     _ui_mem.last_city       or "—"),
+        ("⭐ Last Product",  _ui_mem.last_product    or "—"),
+        ("🏷️ Last Category", _ui_mem.last_category  or "—"),
     ]
     rows_html = "".join([
         f'<div style="display:flex;justify-content:space-between;padding:5px 0;'
@@ -2063,79 +2281,75 @@ with bb_mem_col:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Chat history ──────────────────────────────────────────────────────────────────
+# ── Session state initialisation ──────────────────────────────────────────────────
 if "blinkbot_history" not in st.session_state:
-    st.session_state.blinkbot_history = [{
-        "role": "bot",
-        "msg": (
-            f"👋 **Hi! I'm BlinkBot** — your AI Business Analyst with memory.\n\n"
-            f"I've analyzed **{len(df):,} records**. I remember context between turns, so you can ask:\n"
-            f"- *'Tell me more about it'* · *'What about that city?'* · *'Compare with the worst one'*\n\n"
-            f"Every answer now comes with an **inline chart** for instant visual context. "
-            f"Start with *'Give me a summary'* or ask anything!"
-        ),
-        "fig_json": None,
-    }]
+    welcome = (
+        f"👋 **Hi! I'm BlinkBot** — now powered by **{_ANTHROPIC_MODEL}**.\n\n"
+        f"I've analyzed **{len(df):,} records** and I have full conversational memory. "
+        f"Ask me anything in plain English — I'll answer with data, a chart, and a recommendation.\n\n"
+        f"Try: *'Give me a full summary'* · *'Which city should we focus on?'* · *'Why is Grocery underperforming?'*"
+        if (use_ai_mode and api_key) else
+        f"👋 **Hi! I'm BlinkBot** — your AI Business Analyst with memory.\n\n"
+        f"I've analyzed **{len(df):,} records**. Every answer comes with an inline chart.\n\n"
+        f"💡 *Enable **LLM Mode** in the sidebar for natural-language answers powered by Claude.*\n\n"
+        f"Try: *'Give me a summary'* · *'Which city is worst?'* · *'Best product?'*"
+    )
+    st.session_state.blinkbot_history  = [{"role":"bot","msg":welcome,"fig_json":None}]
 
+# LLM message history — separate from display history (Anthropic format)
+if "bb_messages_llm" not in st.session_state:
+    st.session_state.bb_messages_llm = []
+
+# ── Render chat history ───────────────────────────────────────────────────────────
 for msg in st.session_state.blinkbot_history:
     css_class = "chat-message-bot" if msg["role"] == "bot" else "chat-message-user"
     prefix    = "" if msg["role"] == "bot" else "💬 "
     st.markdown(f'<div class="{css_class}">{prefix}{msg["msg"]}</div>', unsafe_allow_html=True)
-    # Render inline chart for bot messages that have one
     if msg["role"] == "bot" and msg.get("fig_json"):
-        fig = _fig_from_json(msg["fig_json"])
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, key=f"bb_chart_{id(msg)}")
+        restored = _fig_from_json(msg["fig_json"])
+        if restored:
+            st.plotly_chart(restored, use_container_width=True, key=f"bb_fig_{id(msg)}")
 
-# ── Dynamic quick questions (context-aware) ───────────────────────────────────────
+# ── Dynamic quick-question buttons ───────────────────────────────────────────────
 st.markdown("**💡 Quick Questions:**")
-
-# Base quick items — always shown
 QUICK_BASE = [
-    ("📊 Summary",        "Give me a full business summary"),
-    ("🏆 Best Product",   "Which product is performing best?"),
-    ("📍 City Analysis",  "Which city is performing worst?"),
-    ("⚡ Influencers",    "How is influencer marketing performing?"),
+    ("📊 Summary",       "Give me a full business summary"),
+    ("🏆 Best Product",  "Which product is performing best?"),
+    ("📍 City Analysis", "Which city is performing worst?"),
+    ("⚡ Influencers",   "How is influencer marketing performing?"),
 ]
-
-# Memory-driven follow-up items — shown only when context exists
-QUICK_FOLLOWUP: list[tuple[str,str]] = []
+QUICK_FOLLOWUP: list[tuple[str, str]] = []
 if _ui_mem.last_intent == "city" and _ui_mem.last_city:
-    QUICK_FOLLOWUP.append((f"⚖️ Compare Cities", "Compare best vs worst city"))
+    QUICK_FOLLOWUP.append(("⚖️ Compare Cities",   "Compare best vs worst city"))
 if _ui_mem.last_intent in ("revenue","summary") and _ui_mem.last_category:
-    QUICK_FOLLOWUP.append((f"🏷️ Category Drill", f"Tell me more about {_ui_mem.last_category}"))
+    QUICK_FOLLOWUP.append(("🏷️ Category Drill",   f"Tell me more about {_ui_mem.last_category}"))
 if _ui_mem.last_product:
-    QUICK_FOLLOWUP.append((f"📦 Reorder Risk", f"Inventory risk for {_ui_mem.last_product}"))
+    QUICK_FOLLOWUP.append(("📦 Reorder Risk",      f"Inventory risk for {_ui_mem.last_product}"))
 if _ui_mem.turn_count > 0:
-    QUICK_FOLLOWUP.append(("🔄 Tell Me More", "Tell me more"))
+    QUICK_FOLLOWUP.append(("🔄 Tell Me More",      "Tell me more"))
 
-# Show up to 4 buttons (follow-ups take priority when present)
 display_items = (QUICK_FOLLOWUP + QUICK_BASE)[:4]
 quick_cols    = st.columns(len(display_items))
 clicked_quick = None
-for i, (btn_label, question) in enumerate(display_items):
+for i, (btn_label, q_text) in enumerate(display_items):
     with quick_cols[i]:
         if st.button(btn_label, key=f"bb_q{i}", use_container_width=True):
-            clicked_quick = question
+            clicked_quick = q_text
 
-# ── Text input form ───────────────────────────────────────────────────────────────
+# ── Text input ────────────────────────────────────────────────────────────────────
 with st.form(key="bb_main_form", clear_on_submit=True):
     fc1, fc2 = st.columns([5, 1])
     with fc1:
-        placeholder = (
-            f"Follow up: 'tell me more about {_ui_mem.last_city}' or ask something new..."
-            if _ui_mem.last_city
-            else "e.g. What is my total profit? Which city is weakest?"
+        ph = (
+            f"Ask anything — I'll answer with data and a chart..."
+            if (use_ai_mode and api_key)
+            else f"e.g. What is my total profit? Which city is weakest?"
         )
-        user_input = st.text_input(
-            "Ask BlinkBot...",
-            placeholder=placeholder,
-            label_visibility="collapsed",
-        )
+        user_input = st.text_input("Ask BlinkBot...", placeholder=ph, label_visibility="collapsed")
     with fc2:
         submitted = st.form_submit_button("Ask 🤖", use_container_width=True)
 
-# ── Process question ──────────────────────────────────────────────────────────────
+# ── Route & respond ───────────────────────────────────────────────────────────────
 question_to_answer = None
 if submitted and user_input.strip():
     question_to_answer = user_input.strip()
@@ -2143,22 +2357,81 @@ elif clicked_quick:
     question_to_answer = clicked_quick
 
 if question_to_answer:
-    st.session_state.blinkbot_history.append({"role": "user", "msg": question_to_answer, "fig_json": None})
-    response_text, response_fig = blinkbot_analyze(question_to_answer, df)
-    st.session_state.blinkbot_history.append({
-        "role":     "bot",
-        "msg":      response_text,
-        "fig_json": _fig_to_json(response_fig),
-    })
-    st.rerun()
+    # 1. Log user turn
+    st.session_state.blinkbot_history.append({"role":"user","msg":question_to_answer,"fig_json":None})
+    st.session_state.bb_messages_llm.append({"role":"user","content":question_to_answer})
+
+    # 2. Pick chart regardless of mode
+    response_fig     = _detect_chart_for_question(question_to_answer, _bb_ctx_live, df)
+    response_fig_json = _fig_to_json(response_fig)
+
+    # ── LLM streaming mode ────────────────────────────────────────────────────────
+    if use_ai_mode and api_key:
+        system_prompt = _build_llm_system_prompt(df, kpis)
+
+        # Show user bubble immediately, then stream bot response in-place
+        st.markdown(f'<div class="chat-message-user">💬 {question_to_answer}</div>', unsafe_allow_html=True)
+
+        # Streaming placeholder
+        stream_placeholder = st.empty()
+        full_response      = ""
+        error_occurred     = False
+
+        for chunk in _call_anthropic_stream(
+            st.session_state.bb_messages_llm, system_prompt, api_key
+        ):
+            full_response += chunk
+            if "⚠️" in chunk:
+                error_occurred = True
+            stream_placeholder.markdown(
+                f'<div class="chat-message-bot">{full_response}▊</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Finalise — remove cursor
+        stream_placeholder.markdown(
+            f'<div class="chat-message-bot">{full_response}</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Show chart inline after response
+        if response_fig and not error_occurred:
+            st.plotly_chart(response_fig, use_container_width=True, key="bb_stream_chart")
+
+        # Persist to histories
+        st.session_state.bb_messages_llm.append({"role":"assistant","content":full_response})
+        # Trim LLM history to avoid unbounded growth
+        if len(st.session_state.bb_messages_llm) > _LLM_HISTORY_LIMIT * 2:
+            st.session_state.bb_messages_llm = st.session_state.bb_messages_llm[-_LLM_HISTORY_LIMIT:]
+        st.session_state.blinkbot_history.append({
+            "role":     "bot",
+            "msg":      full_response,
+            "fig_json": response_fig_json if not error_occurred else None,
+        })
+
+    # ── Rule-based fallback mode ──────────────────────────────────────────────────
+    else:
+        response_text, response_fig_rb = blinkbot_analyze(question_to_answer, df)
+        # Prefer rule-based chart if the keyword router found nothing
+        final_fig = response_fig_rb or response_fig
+        st.session_state.blinkbot_history.append({
+            "role":     "bot",
+            "msg":      response_text,
+            "fig_json": _fig_to_json(final_fig),
+        })
+        st.rerun()
+
+    if use_ai_mode and api_key:
+        st.rerun()   # re-render so next input box is fresh
 
 # ── Clear chat + memory ───────────────────────────────────────────────────────────
 if len(st.session_state.blinkbot_history) > 1:
     cl1, cl2 = st.columns([1, 5])
     with cl1:
         if st.button("🗑️ Clear Chat & Memory", type="secondary", key="clear_chat", use_container_width=True):
-            st.session_state.blinkbot_history = []
-            st.session_state.bb_memory        = ConversationMemory().to_dict()
+            st.session_state.blinkbot_history  = []
+            st.session_state.bb_messages_llm   = []
+            st.session_state.bb_memory         = ConversationMemory().to_dict()
             st.rerun()
 
 # ── RAW DATA TABLE ────────────────────────────────────────────────────────────────
@@ -2174,7 +2447,7 @@ if show_raw:
 # ── FOOTER ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="footer">
-  Ayush Intelligence Hub v4.0 — Phase 3 &nbsp;·&nbsp;
+  Ayush Intelligence Hub v5.0 — Phase 4 (LLM) &nbsp;·&nbsp;
   Developed by <span class="dev">Ayush Mishra</span> &nbsp;·&nbsp;
   Pandas · SciPy · scikit-learn · Streamlit · Plotly
 </div>
