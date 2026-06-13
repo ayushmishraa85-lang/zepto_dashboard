@@ -1351,7 +1351,7 @@ def blinkbot_analyze(question: str, df: pd.DataFrame) -> BotReply:
 # ══════════════════════════════════════════════════════════════════════════════════
 
 _ANTHROPIC_URL    = "https://api.anthropic.com/v1/messages"
-_ANTHROPIC_MODEL  = "claude-sonnet-4-6"
+_ANTHROPIC_MODEL  = "claude-3-5-sonnet-20241022"   # universally available model
 _ANTHROPIC_VER    = "2023-06-01"
 _MAX_LLM_TOKENS   = 1024
 _LLM_HISTORY_LIMIT = 12   # keep last N messages to avoid ballooning context
@@ -1470,22 +1470,34 @@ def _call_anthropic_stream(messages: list[dict], system: str, api_key: str):
         "messages":   messages[-_LLM_HISTORY_LIMIT:],
         "stream":     True,
     }
+    # Guard: Anthropic rejects requests with zero messages
+    if not payload["messages"]:
+        yield "\n\n⚠️ **No messages to send.** Please type your question and try again."
+        return
     try:
         with requests.post(
             _ANTHROPIC_URL, headers=headers, json=payload,
             stream=True, timeout=45
         ) as resp:
             if resp.status_code == 401:
-                yield "\n\n⚠️ **Invalid API key.** Please check your key in the sidebar."
+                yield "\n\n⚠️ **Invalid API key (401).** Go to console.anthropic.com/keys and create a new key."
                 return
             if resp.status_code == 400:
-                yield "\n\n⚠️ **Bad request (400).** Chat history was cleared — please ask your question again."
+                try:
+                    err_detail = resp.json().get("error", {}).get("message", resp.text[:300])
+                except Exception:
+                    err_detail = resp.text[:300]
+                yield f"\n\n⚠️ **Bad request (400):** {err_detail}\n\n*Chat history cleared — ask your question again.*"
                 return
             if resp.status_code == 429:
-                yield "\n\n⚠️ **Rate limit hit.** Wait a moment and try again."
+                yield "\n\n⚠️ **Rate limit (429).** Wait a moment and try again."
                 return
             if not resp.ok:
-                yield f"\n\n⚠️ **API error {resp.status_code}.** Switching to rule-based mode."
+                try:
+                    err_detail = resp.json().get("error", {}).get("message", resp.text[:300])
+                except Exception:
+                    err_detail = resp.text[:300]
+                yield f"\n\n⚠️ **API error {resp.status_code}:** {err_detail}"
                 return
             for raw_line in resp.iter_lines():
                 if not raw_line:
@@ -1640,7 +1652,7 @@ with st.sidebar:
                 api_key = ""
         st.markdown(f"""
         <div style="font-size:9px;color:#4a5a7a;margin-top:6px">
-          Model: <span style="color:#a5b4fc;font-family:monospace">{_ANTHROPIC_MODEL}</span><br>
+          Model: <span style="color:#a5b4fc;font-family:monospace">claude-3-5-sonnet-20241022</span><br>
           History: last {_LLM_HISTORY_LIMIT} turns · Max tokens: {_MAX_LLM_TOKENS}
         </div>""", unsafe_allow_html=True)
     else:
