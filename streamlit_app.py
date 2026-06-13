@@ -115,6 +115,12 @@ PLOTLY_LAYOUT = dict(
     legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
 )
 
+# PLOTLY_BASE — same as PLOTLY_LAYOUT but WITHOUT xaxis/yaxis keys.
+# Use this whenever update_layout() also passes its own xaxis= or yaxis=
+# to avoid Python's "duplicate keyword argument" TypeError.
+_AXIS_DEFAULTS = dict(gridcolor="rgba(99,130,255,.06)", linecolor="rgba(99,130,255,.1)")
+PLOTLY_BASE = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("xaxis", "yaxis")}
+
 # Unit-economics cost ratios (easy to tune in one place)
 UNIT_ECON = dict(cogs=0.52, rider=0.12, packaging=0.03, gateway=0.02, promos=0.05)
 
@@ -818,9 +824,9 @@ def _chart_revenue_by_category(ctx: dict) -> go.Figure:
         text=[fmt(v) for v in cat_r.values], textposition="outside",
         textfont=dict(color="#f0f4ff", size=10),
     ))
-    fig.update_layout(**PLOTLY_LAYOUT,
+    fig.update_layout(**PLOTLY_BASE,
         title=dict(text="💬 Revenue by Category", font=dict(color="#a5b4fc", size=12)),
-        height=240, yaxis=dict(tickprefix="₹", **PLOTLY_LAYOUT["yaxis"]), showlegend=False)
+        height=240, yaxis=dict(tickprefix="₹", **_AXIS_DEFAULTS), showlegend=False)
     return fig
 
 
@@ -834,10 +840,10 @@ def _chart_city_ranking(ctx: dict) -> go.Figure:
         text=[fmt(v) for v in cr.values], textposition="outside",
         textfont=dict(color="#f0f4ff", size=10),
     ))
-    fig.update_layout(**PLOTLY_LAYOUT,
+    fig.update_layout(**PLOTLY_BASE,
         title=dict(text="💬 City Revenue Ranking", font=dict(color="#a5b4fc", size=12)),
-        height=240, xaxis=dict(tickprefix="₹", **PLOTLY_LAYOUT["xaxis"]),
-        yaxis=dict(autorange="reversed", **PLOTLY_LAYOUT["yaxis"]), showlegend=False)
+        height=240, xaxis=dict(tickprefix="₹", **_AXIS_DEFAULTS),
+        yaxis=dict(autorange="reversed", **_AXIS_DEFAULTS), showlegend=False)
     return fig
 
 
@@ -854,10 +860,10 @@ def _chart_top_products(ctx: dict, n: int = 8) -> go.Figure:
         text=[fmt(v) for v in pr.values], textposition="outside",
         textfont=dict(color="#f0f4ff", size=10),
     ))
-    fig.update_layout(**PLOTLY_LAYOUT,
+    fig.update_layout(**PLOTLY_BASE,
         title=dict(text=f"💬 Top {n} Products by Revenue", font=dict(color="#a5b4fc", size=12)),
-        height=260, xaxis=dict(tickprefix="₹", **PLOTLY_LAYOUT["xaxis"]),
-        yaxis=dict(autorange="reversed", **PLOTLY_LAYOUT["yaxis"]), showlegend=False)
+        height=260, xaxis=dict(tickprefix="₹", **_AXIS_DEFAULTS),
+        yaxis=dict(autorange="reversed", **_AXIS_DEFAULTS), showlegend=False)
     return fig
 
 
@@ -866,9 +872,9 @@ def _chart_influencer_lift(ctx: dict, df: pd.DataFrame) -> go.Figure:
     grp.columns = ["Category","Influencer","Avg Revenue"]
     fig = px.bar(grp, x="Category", y="Avg Revenue", color="Influencer",
                  barmode="group", color_discrete_map={"Yes":"#6366f1","No":"#4a5a7a"})
-    fig.update_layout(**PLOTLY_LAYOUT,
+    fig.update_layout(**PLOTLY_BASE,
         title=dict(text="💬 Influencer Lift by Category", font=dict(color="#a5b4fc", size=12)),
-        height=240, yaxis=dict(tickprefix="₹", **PLOTLY_LAYOUT["yaxis"]))
+        height=240, yaxis=dict(tickprefix="₹", **_AXIS_DEFAULTS))
     fig.update_traces(marker_line_width=0, opacity=0.85)
     return fig
 
@@ -888,7 +894,7 @@ def _chart_discount_curve(ctx: dict) -> go.Figure:
         textposition="top center", textfont=dict(color="#06b6d4", size=9),
         line=dict(color="#06b6d4", width=2), marker=dict(size=7),
     ), secondary_y=True)
-    fig.update_layout(**PLOTLY_LAYOUT,
+    fig.update_layout(**PLOTLY_BASE,
         title=dict(text="💬 Discount Sweet Spot", font=dict(color="#a5b4fc", size=12)),
         height=240)
     fig.update_yaxes(tickprefix="₹", secondary_y=False)
@@ -905,9 +911,9 @@ def _chart_profit_margin_by_category(ctx: dict, df: pd.DataFrame) -> go.Figure:
         text=[f"{v:.1f}%" for v in bm.values], textposition="outside",
         textfont=dict(color="#f0f4ff", size=10),
     ))
-    fig.update_layout(**PLOTLY_LAYOUT,
+    fig.update_layout(**PLOTLY_BASE,
         title=dict(text="💬 Avg Profit Margin by Category", font=dict(color="#a5b4fc", size=12)),
-        height=240, yaxis=dict(ticksuffix="%", **PLOTLY_LAYOUT["yaxis"]), showlegend=False)
+        height=240, yaxis=dict(ticksuffix="%", **_AXIS_DEFAULTS), showlegend=False)
     return fig
 
 
@@ -2059,7 +2065,7 @@ with col1:
         annotation_position="top left", annotation_font_color="#a5b4fc",
     )
     fig.update_layout(
-        **PLOTLY_LAYOUT,
+        **PLOTLY_BASE,
         title=dict(text=f"Pareto Chart — Top {cutoff_products} of {len(prod_rev_sorted)} products drive 80% of revenue",
                    font=dict(color="#f0f4ff", size=12)),
         height=300,
@@ -2113,11 +2119,11 @@ for cat in categories_present:
     ))
 
 fig.update_layout(
-    **PLOTLY_LAYOUT,
+    **PLOTLY_BASE,
     title=dict(text="Simulated 8-Week Category Revenue Trend (based on current distribution)",
                font=dict(color="#f0f4ff", size=12)),
     height=300,
-    yaxis=dict(tickprefix="₹", title="Avg Revenue", **PLOTLY_LAYOUT["yaxis"]),
+    yaxis=dict(tickprefix="₹", title="Avg Revenue", **_AXIS_DEFAULTS),
     hovermode="x unified",
 )
 st.plotly_chart(fig, use_container_width=True)
