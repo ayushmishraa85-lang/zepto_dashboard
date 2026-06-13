@@ -1350,10 +1350,9 @@ def blinkbot_analyze(question: str, df: pd.DataFrame) -> BotReply:
 # ── PHASE 4 — LLM INTEGRATION  (Anthropic API · streaming · chart detection)
 # ══════════════════════════════════════════════════════════════════════════════════
 
-_ANTHROPIC_URL    = "https://api.anthropic.com/v1/messages"
-_ANTHROPIC_MODEL  = "claude-3-5-sonnet-20241022"   # universally available model
-_ANTHROPIC_VER    = "2023-06-01"
-_MAX_LLM_TOKENS   = 1024
+_GEMINI_BASE_URL   = "https://generativelanguage.googleapis.com/v1beta/models"
+_GEMINI_MODEL      = "gemini-1.5-flash"          # free tier, fast, capable
+_MAX_LLM_TOKENS    = 1024
 _LLM_HISTORY_LIMIT = 12   # keep last N messages to avoid ballooning context
 
 
@@ -1452,53 +1451,65 @@ def _sanitise_messages(messages: list[dict]) -> list[dict]:
     return merged
 
 
-def _call_anthropic_stream(messages: list[dict], system: str, api_key: str):
+def _to_gemini_messages(messages: list[dict]) -> list[dict]:
     """
-    Generator that streams text chunks from the Anthropic API (SSE protocol).
-    Yields plain string chunks as they arrive.
-    Falls back gracefully on any network or API error.
+    Convert internal Anthropic-style messages (role: user/assistant)
+    to Gemini format (role: user/model, parts: [{text: ...}]).
     """
-    headers = {
-        "Content-Type":    "application/json",
-        "x-api-key":       api_key.strip().strip('"').strip("'"),
-        "anthropic-version": _ANTHROPIC_VER,
-    }
+    role_map = {"user": "user", "assistant": "model"}
+    return [
+        {"role": role_map.get(m["role"], "user"),
+         "parts": [{"text": m["content"]}]}
+        for m in messages
+        if m.get("content", "").strip()
+    ]
+
+
+def _call_gemini_stream(messages: list[dict], system: str, api_key: str):
+    """
+    Generator that streams text chunks from the Google Gemini API (SSE).
+    Uses gemini-1.5-flash — free tier, no billing required.
+    """
+    url    = f"{_GEMINI_BASE_URL}/{_GEMINI_MODEL}:streamGenerateContent"
+    params = {"key": api_key.strip(), "alt": "sse"}
+
     payload = {
-        "model":      _ANTHROPIC_MODEL,
-        "max_tokens": _MAX_LLM_TOKENS,
-        "system":     system,
-        "messages":   messages[-_LLM_HISTORY_LIMIT:],
-        "stream":     True,
+        "contents": _to_gemini_messages(messages),
+        "systemInstruction": {
+            "parts": [{"text": system}]
+        },
+        "generationConfig": {
+            "maxOutputTokens": _MAX_LLM_TOKENS,
+            "temperature":     0.7,
+        },
     }
-    # Guard: Anthropic rejects requests with zero messages
-    if not payload["messages"]:
+
+    if not payload["contents"]:
         yield "\n\n⚠️ **No messages to send.** Please type your question and try again."
         return
+
     try:
         with requests.post(
-            _ANTHROPIC_URL, headers=headers, json=payload,
+            url, params=params, json=payload,
             stream=True, timeout=45
         ) as resp:
-            if resp.status_code == 401:
-                yield "\n\n⚠️ **Invalid API key (401).** Go to console.anthropic.com/keys and create a new key."
-                return
             if resp.status_code == 400:
-                try:
-                    err_detail = resp.json().get("error", {}).get("message", resp.text[:300])
-                except Exception:
-                    err_detail = resp.text[:300]
-                yield f"\n\n⚠️ **Bad request (400):** {err_detail}\n\n*Chat history cleared — ask your question again.*"
+                try:   err = resp.json().get("error", {}).get("message", resp.text[:300])
+                except: err = resp.text[:300]
+                yield f"\n\n⚠️ **Bad request (400):** {err}"
+                return
+            if resp.status_code in (401, 403):
+                yield "\n\n⚠️ **Invalid API key.** Get yours free at aistudio.google.com → Get API Key."
                 return
             if resp.status_code == 429:
-                yield "\n\n⚠️ **Rate limit (429).** Wait a moment and try again."
+                yield "\n\n⚠️ **Rate limit hit.** Free tier allows 15 req/min — wait a moment and retry."
                 return
             if not resp.ok:
-                try:
-                    err_detail = resp.json().get("error", {}).get("message", resp.text[:300])
-                except Exception:
-                    err_detail = resp.text[:300]
-                yield f"\n\n⚠️ **API error {resp.status_code}:** {err_detail}"
+                try:   err = resp.json().get("error", {}).get("message", resp.text[:300])
+                except: err = resp.text[:300]
+                yield f"\n\n⚠️ **API error {resp.status_code}:** {err}"
                 return
+
             for raw_line in resp.iter_lines():
                 if not raw_line:
                     continue
@@ -1510,16 +1521,18 @@ def _call_anthropic_stream(messages: list[dict], system: str, api_key: str):
                     break
                 try:
                     chunk = json.loads(data_str)
-                    if chunk.get("type") == "content_block_delta":
-                        delta = chunk.get("delta", {})
-                        if delta.get("type") == "text_delta":
-                            yield delta.get("text", "")
+                    for candidate in chunk.get("candidates", []):
+                        for part in candidate.get("content", {}).get("parts", []):
+                            text = part.get("text", "")
+                            if text:
+                                yield text
                 except json.JSONDecodeError:
                     continue
+
     except requests.exceptions.Timeout:
-        yield "\n\n⚠️ **Request timed out.** The API took too long — try again."
+        yield "\n\n⚠️ **Request timed out.** Try again in a moment."
     except requests.exceptions.ConnectionError:
-        yield "\n\n⚠️ **Connection error.** Check network access to api.anthropic.com."
+        yield "\n\n⚠️ **Connection error.** Check network access to generativelanguage.googleapis.com."
     except Exception as exc:
         yield f"\n\n⚠️ **Unexpected error:** {exc}"
 
@@ -1596,64 +1609,59 @@ with st.sidebar:
 
     # ── Phase 4: AI Mode ─────────────────────────────────────────────────────────
     st.markdown("#### 🤖 BlinkBot AI Mode")
-    use_ai_mode = st.toggle("Enable LLM Mode", value=False, help="Use Anthropic API for natural-language answers")
+    use_ai_mode = st.toggle("Enable LLM Mode", value=False, help="Use Google Gemini (free) for natural-language answers")
 
     if use_ai_mode:
-        # Try st.secrets first, fall back to text input
-        secret_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
+        secret_key = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
         if secret_key:
             api_key = secret_key.strip().strip('"').strip("'")
             st.markdown("""
             <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
                         border-radius:8px;padding:8px 10px;font-size:10px;color:#34d399">
-              ✅ API key loaded from secrets
+              ✅ Gemini key loaded from secrets
             </div>""", unsafe_allow_html=True)
         else:
             _raw_key = st.text_input(
-                "Anthropic API Key",
+                "Google Gemini API Key",
                 type="password",
-                placeholder="sk-ant-api03-...",
-                help="Get yours at console.anthropic.com/keys — paste the key only, no quotes",
+                placeholder="AIzaSy...",
+                help="Free at aistudio.google.com → Get API Key — no credit card needed",
             )
-            # Sanitise: strip whitespace, accidental quotes, newlines
             api_key = _raw_key.strip().strip('"').strip("'").strip() if _raw_key else ""
 
-            # Detect placeholder / example text
             _is_placeholder = api_key and (
-                "your-key" in api_key.lower()
+                "your-key"  in api_key.lower()
                 or "your_key" in api_key.lower()
-                or api_key == "sk-ant-api03-your-key-here"
-                or not api_key.startswith("sk-ant")
+                or not api_key.startswith("AIza")
             )
 
             if api_key and not _is_placeholder:
                 st.markdown("""
                 <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#34d399">
-                  ✅ Key set — LLM mode active
+                  ✅ Gemini key set — LLM mode active
                 </div>""", unsafe_allow_html=True)
             elif _is_placeholder:
                 st.markdown("""
                 <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#f87171">
-                  ❌ That looks like placeholder text, not a real key.<br><br>
-                  Go to <strong>console.anthropic.com/keys</strong>,<br>
-                  copy your actual key (starts with <code>sk-ant-api03-</code>),<br>
-                  and paste it here <strong>without quotes</strong>.
+                  ❌ Invalid key format.<br><br>
+                  Go to <strong>aistudio.google.com</strong> → Get API Key.<br>
+                  Key starts with <code>AIza</code>. Paste without quotes.
                 </div>""", unsafe_allow_html=True)
                 api_key = ""
             else:
                 st.markdown("""
                 <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#f59e0b">
-                  ⚠️ Paste your Anthropic API key above.<br>
-                  Rule-based fallback is active until then.
+                  ⚠️ Paste your Gemini API key above.<br>
+                  100% free · No credit card · 15 req/min
                 </div>""", unsafe_allow_html=True)
                 api_key = ""
         st.markdown(f"""
         <div style="font-size:9px;color:#4a5a7a;margin-top:6px">
-          Model: <span style="color:#a5b4fc;font-family:monospace">claude-3-5-sonnet-20241022</span><br>
-          History: last {_LLM_HISTORY_LIMIT} turns · Max tokens: {_MAX_LLM_TOKENS}
+          Model: <span style="color:#a5b4fc;font-family:monospace">{_GEMINI_MODEL}</span><br>
+          Free tier · 15 req/min · History: last {_LLM_HISTORY_LIMIT} turns
         </div>""", unsafe_allow_html=True)
     else:
         api_key = ""
@@ -2316,8 +2324,8 @@ _ui_mem = _get_memory()
 
 # ── Mode badge ───────────────────────────────────────────────────────────────────
 mode_badge = (
-    '<span style="background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.4);'
-    'border-radius:20px;padding:3px 10px;font-size:10px;color:#a5b4fc;margin-left:8px">🧠 LLM Mode</span>'
+    '<span style="background:rgba(16,185,129,.2);border:1px solid rgba(16,185,129,.4);'
+    'border-radius:20px;padding:3px 10px;font-size:10px;color:#34d399;margin-left:8px">✨ Gemini Free</span>'
     if (use_ai_mode and api_key) else
     '<span style="background:rgba(99,130,255,.08);border:1px solid rgba(99,130,255,.15);'
     'border-radius:20px;padding:3px 10px;font-size:10px;color:#4a5a7a;margin-left:8px">🔧 Rule-based</span>'
@@ -2374,19 +2382,19 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ── Session state initialisation ──────────────────────────────────────────────────
 if "blinkbot_history" not in st.session_state:
     welcome = (
-        f"👋 **Hi! I'm BlinkBot** — now powered by **{_ANTHROPIC_MODEL}**.\n\n"
+        f"👋 **Hi! I'm BlinkBot** — now powered by **Google Gemini** (free ✨).\n\n"
         f"I've analyzed **{len(df):,} records** and I have full conversational memory. "
         f"Ask me anything in plain English — I'll answer with data, a chart, and a recommendation.\n\n"
         f"Try: *'Give me a full summary'* · *'Which city should we focus on?'* · *'Why is Grocery underperforming?'*"
         if (use_ai_mode and api_key) else
         f"👋 **Hi! I'm BlinkBot** — your AI Business Analyst with memory.\n\n"
         f"I've analyzed **{len(df):,} records**. Every answer comes with an inline chart.\n\n"
-        f"💡 *Enable **LLM Mode** in the sidebar for natural-language answers powered by Claude.*\n\n"
+        f"💡 *Enable **LLM Mode** → paste your free **Gemini key** from aistudio.google.com*\n\n"
         f"Try: *'Give me a summary'* · *'Which city is worst?'* · *'Best product?'*"
     )
     st.session_state.blinkbot_history  = [{"role":"bot","msg":welcome,"fig_json":None}]
 
-# LLM message history — separate from display history (Anthropic format)
+# LLM message history — Anthropic-style internally, converted to Gemini format at call time
 if "bb_messages_llm" not in st.session_state:
     st.session_state.bb_messages_llm = []
 
@@ -2470,7 +2478,7 @@ if question_to_answer:
         full_response      = ""
         error_occurred     = False
 
-        for chunk in _call_anthropic_stream(clean_messages, system_prompt, api_key):
+        for chunk in _call_gemini_stream(clean_messages, system_prompt, api_key):
             full_response += chunk
             if "⚠️" in chunk:
                 error_occurred = True
