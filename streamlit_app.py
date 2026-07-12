@@ -1,6 +1,7 @@
 """
 Zepto Sales Intelligence Dashboard — Streamlit Edition
 Phase 4: Anthropic LLM streaming · natural-language BlinkBot · chart detection
+Phase 5: CSV + Excel (.xlsx) upload support with validation
 Developed by Ayush Mishra
 """
 
@@ -203,6 +204,15 @@ _NUMERIC_COLS = ["Original Price", "Current Price", "Discount", "Orders", "Total
 _PRICE_BINS   = [0, 60, 100, 140, 180, np.inf]
 _PRICE_LABELS = ["₹20–60", "₹61–100", "₹101–140", "₹141–180", "₹181+"]
 
+# Columns every dataset MUST contain for the dashboard's math to work.
+# "Influencer Active" is intentionally excluded — it's treated as optional
+# throughout the app (every consumer already checks `if "Influencer Active" in df.columns`).
+REQUIRED_COLUMNS = [
+    "Product Name", "Category", "City",
+    "Original Price", "Current Price", "Discount",
+    "Orders", "Total Revenue",
+]
+
 
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize, impute, and engineer features on a raw DataFrame."""
@@ -241,6 +251,81 @@ def load_default() -> pd.DataFrame:
     if os.path.exists(path):
         return clean(pd.read_csv(path))
     return clean(pd.read_csv(io.StringIO(_FALLBACK_CSV)))
+
+
+def _read_uploaded_dataframe(uploaded_file) -> pd.DataFrame:
+    """
+    Detect the uploaded file's type by extension and parse it into a
+    raw (un-cleaned) DataFrame.
+
+    Supports .csv and .xlsx. Raises ValueError with a user-friendly
+    message for anything else, or if parsing fails outright.
+    """
+    filename = uploaded_file.name.lower()
+
+    if filename.endswith(".csv"):
+        try:
+            return pd.read_csv(uploaded_file)
+        except Exception as e:
+            raise ValueError(
+                f"Couldn't parse **{uploaded_file.name}** as CSV. "
+                f"Check that it's a valid comma-separated file. ({e})"
+            )
+
+    elif filename.endswith(".xlsx"):
+        try:
+            # First sheet by default — most exports from Zepto/Blinkit/
+            # Swiggy Instamart-style tools ship a single-sheet workbook.
+            return pd.read_excel(uploaded_file, engine="openpyxl")
+        except ImportError:
+            raise ValueError(
+                "Reading .xlsx files requires the `openpyxl` package. "
+                "Install it with `pip install openpyxl` and retry."
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Couldn't parse **{uploaded_file.name}** as an Excel file. "
+                f"Make sure it's a valid, non-password-protected .xlsx workbook. ({e})"
+            )
+
+    else:
+        raise ValueError(
+            "Unsupported file type. Please upload a **.csv** or **.xlsx** file."
+        )
+
+
+def _validate_columns(df: pd.DataFrame, filename: str) -> None:
+    """Raise ValueError if any required column is missing from df."""
+    df.columns = [str(c).strip() for c in df.columns]
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"**{filename}** is missing required column(s): "
+            + ", ".join(f"`{m}`" for m in missing)
+            + ". Expected columns: " + ", ".join(f"`{c}`" for c in REQUIRED_COLUMNS)
+            + " (optional: `Influencer Active`)."
+        )
+    if df.dropna(how="all").empty:
+        raise ValueError(f"**{filename}** was read successfully but contains no data rows.")
+
+
+def load_user_file(uploaded_file) -> pd.DataFrame:
+    """
+    End-to-end loader for a user-uploaded CSV or XLSX file:
+      1. Detect type & parse (_read_uploaded_dataframe)
+      2. Validate required columns (_validate_columns)
+      3. Clean, impute, and engineer features (clean)
+
+    Works with exports from Zepto, Blinkit, Swiggy Instamart, or any
+    quick-commerce platform as long as the required columns are present —
+    column order and extra columns don't matter.
+
+    Raises ValueError on any recoverable problem; the caller is expected
+    to catch it and fall back to the default dataset.
+    """
+    raw_df = _read_uploaded_dataframe(uploaded_file)
+    _validate_columns(raw_df, uploaded_file.name)
+    return clean(raw_df)
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -1322,7 +1407,7 @@ def blinkbot_analyze(question: str, df: pd.DataFrame) -> BotReply:
     4. Save updated memory
     """
     if df is None or len(df) == 0:
-        return "⚠️ No data loaded yet. Please upload a CSV file to get started!", None
+        return "⚠️ No data loaded yet. Please upload a CSV or Excel file to get started!", None
 
     mem      = _get_memory()
     entities = extract_entities(question, df)
@@ -1572,21 +1657,39 @@ with st.sidebar:
     <div style="text-align:center;padding:12px 0 20px">
       <div style="width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">N</div>
       <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Nova-MS</div>
-      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v4.0</div>
+      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v5.0</div>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown("#### 📂 Data Source")
-    uploaded = st.file_uploader("Upload your CSV", type=["csv"], help="Replace the default dataset")
+
+    # Accepts both CSV and Excel (.xlsx) exports — works with Zepto,
+    # Blinkit, Swiggy Instamart, or any similarly-structured export.
+    uploaded = st.file_uploader(
+        "Upload your CSV or Excel file",
+        type=["csv", "xlsx"],
+        help="Replace the default dataset. Accepts .csv or .xlsx exports "
+             "from Zepto, Blinkit, Swiggy Instamart, or similar platforms.",
+    )
     st.markdown("---")
 
+    # Always start from the default/sample dataset so the dashboard never
+    # renders empty, even if the upload fails validation.
     df_raw = load_default()
-    if uploaded:
+
+    if uploaded is not None:
         try:
-            df_raw = clean(pd.read_csv(uploaded))
-            st.success(f"✅ Loaded {len(df_raw):,} rows")
-        except Exception as e:
+            df_raw = load_user_file(uploaded)
+            file_kind = "Excel" if uploaded.name.lower().endswith(".xlsx") else "CSV"
+            st.success(f"✅ Loaded {len(df_raw):,} rows from **{uploaded.name}** ({file_kind})")
+        except ValueError as e:
+            # Expected, user-facing problems: bad type, missing columns, empty file
             st.error(f"❌ {e}")
+            st.info("↩️ Falling back to the default sample dataset until a valid file is uploaded.")
+        except Exception as e:
+            # Anything unexpected — still fail gracefully rather than crashing the app
+            st.error(f"❌ Unexpected error while loading **{uploaded.name}**: {e}")
+            st.info("↩️ Falling back to the default sample dataset.")
 
     st.markdown("#### 🔍 Filters")
     cities     = ["All"] + sorted(df_raw["City"].unique())
