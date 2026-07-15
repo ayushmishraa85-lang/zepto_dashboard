@@ -1,6 +1,7 @@
 """
 Zepto Sales Intelligence Dashboard — Streamlit Edition
 Phase 4: Anthropic LLM streaming · natural-language BlinkBot · chart detection
+Phase 5: CSV + Excel (.xlsx) upload support with validation
 Developed by Ayush Mishra
 """
 
@@ -203,6 +204,15 @@ _NUMERIC_COLS = ["Original Price", "Current Price", "Discount", "Orders", "Total
 _PRICE_BINS   = [0, 60, 100, 140, 180, np.inf]
 _PRICE_LABELS = ["₹20–60", "₹61–100", "₹101–140", "₹141–180", "₹181+"]
 
+# Columns every dataset MUST contain for the dashboard's math to work.
+# "Influencer Active" is intentionally excluded — it's treated as optional
+# throughout the app (every consumer already checks `if "Influencer Active" in df.columns`).
+REQUIRED_COLUMNS = [
+    "Product Name", "Category", "City",
+    "Original Price", "Current Price", "Discount",
+    "Orders", "Total Revenue",
+]
+
 
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize, impute, and engineer features on a raw DataFrame."""
@@ -241,6 +251,81 @@ def load_default() -> pd.DataFrame:
     if os.path.exists(path):
         return clean(pd.read_csv(path))
     return clean(pd.read_csv(io.StringIO(_FALLBACK_CSV)))
+
+
+def _read_uploaded_dataframe(uploaded_file) -> pd.DataFrame:
+    """
+    Detect the uploaded file's type by extension and parse it into a
+    raw (un-cleaned) DataFrame.
+
+    Supports .csv and .xlsx. Raises ValueError with a user-friendly
+    message for anything else, or if parsing fails outright.
+    """
+    filename = uploaded_file.name.lower()
+
+    if filename.endswith(".csv"):
+        try:
+            return pd.read_csv(uploaded_file)
+        except Exception as e:
+            raise ValueError(
+                f"Couldn't parse **{uploaded_file.name}** as CSV. "
+                f"Check that it's a valid comma-separated file. ({e})"
+            )
+
+    elif filename.endswith(".xlsx"):
+        try:
+            # First sheet by default — most exports from Zepto/Blinkit/
+            # Swiggy Instamart-style tools ship a single-sheet workbook.
+            return pd.read_excel(uploaded_file, engine="openpyxl")
+        except ImportError:
+            raise ValueError(
+                "Reading .xlsx files requires the `openpyxl` package. "
+                "Install it with `pip install openpyxl` and retry."
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Couldn't parse **{uploaded_file.name}** as an Excel file. "
+                f"Make sure it's a valid, non-password-protected .xlsx workbook. ({e})"
+            )
+
+    else:
+        raise ValueError(
+            "Unsupported file type. Please upload a **.csv** or **.xlsx** file."
+        )
+
+
+def _validate_columns(df: pd.DataFrame, filename: str) -> None:
+    """Raise ValueError if any required column is missing from df."""
+    df.columns = [str(c).strip() for c in df.columns]
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"**{filename}** is missing required column(s): "
+            + ", ".join(f"`{m}`" for m in missing)
+            + ". Expected columns: " + ", ".join(f"`{c}`" for c in REQUIRED_COLUMNS)
+            + " (optional: `Influencer Active`)."
+        )
+    if df.dropna(how="all").empty:
+        raise ValueError(f"**{filename}** was read successfully but contains no data rows.")
+
+
+def load_user_file(uploaded_file) -> pd.DataFrame:
+    """
+    End-to-end loader for a user-uploaded CSV or XLSX file:
+      1. Detect type & parse (_read_uploaded_dataframe)
+      2. Validate required columns (_validate_columns)
+      3. Clean, impute, and engineer features (clean)
+
+    Works with exports from Zepto, Blinkit, Swiggy Instamart, or any
+    quick-commerce platform as long as the required columns are present —
+    column order and extra columns don't matter.
+
+    Raises ValueError on any recoverable problem; the caller is expected
+    to catch it and fall back to the default dataset.
+    """
+    raw_df = _read_uploaded_dataframe(uploaded_file)
+    _validate_columns(raw_df, uploaded_file.name)
+    return clean(raw_df)
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -1322,7 +1407,7 @@ def blinkbot_analyze(question: str, df: pd.DataFrame) -> BotReply:
     4. Save updated memory
     """
     if df is None or len(df) == 0:
-        return "⚠️ No data loaded yet. Please upload a CSV file to get started!", None
+        return "⚠️ No data loaded yet. Please upload a CSV or Excel file to get started!", None
 
     mem      = _get_memory()
     entities = extract_entities(question, df)
@@ -1350,10 +1435,11 @@ def blinkbot_analyze(question: str, df: pd.DataFrame) -> BotReply:
 # ── PHASE 4 — LLM INTEGRATION  (Anthropic API · streaming · chart detection)
 # ══════════════════════════════════════════════════════════════════════════════════
 
-_GEMINI_BASE_URL   = "https://generativelanguage.googleapis.com/v1beta/models"
-_GEMINI_MODEL      = "gemini-1.5-flash"          # free tier, fast, capable
-_MAX_LLM_TOKENS    = 1024
-_LLM_HISTORY_LIMIT = 12   # keep last N messages to avoid ballooning context
+_CLAUDE_API_URL      = "https://api.anthropic.com/v1/messages"
+_CLAUDE_MODEL        = "claude-sonnet-5"          # balanced quality/cost for a business analyst
+_ANTHROPIC_VERSION   = "2023-06-01"
+_MAX_LLM_TOKENS      = 1024
+_LLM_HISTORY_LIMIT   = 12   # keep last N messages to avoid ballooning context
 
 
 def _build_llm_system_prompt(df: pd.DataFrame, kpis: dict) -> str:
@@ -1451,46 +1537,33 @@ def _sanitise_messages(messages: list[dict]) -> list[dict]:
     return merged
 
 
-def _to_gemini_messages(messages: list[dict]) -> list[dict]:
+def _call_claude_stream(messages: list[dict], system: str, api_key: str):
     """
-    Convert internal Anthropic-style messages (role: user/assistant)
-    to Gemini format (role: user/model, parts: [{text: ...}]).
+    Generator that streams text chunks from Anthropic's Messages API (SSE).
+    Uses claude-sonnet-5. Unlike the old Gemini integration, no role
+    remapping is needed — Anthropic's {"role": "user"/"assistant", "content": str}
+    format is exactly what BlinkBot already stores internally.
     """
-    role_map = {"user": "user", "assistant": "model"}
-    return [
-        {"role": role_map.get(m["role"], "user"),
-         "parts": [{"text": m["content"]}]}
-        for m in messages
-        if m.get("content", "").strip()
-    ]
-
-
-def _call_gemini_stream(messages: list[dict], system: str, api_key: str):
-    """
-    Generator that streams text chunks from the Google Gemini API (SSE).
-    Uses gemini-1.5-flash — free tier, no billing required.
-    """
-    url    = f"{_GEMINI_BASE_URL}/{_GEMINI_MODEL}:streamGenerateContent"
-    params = {"key": api_key.strip(), "alt": "sse"}
-
+    headers = {
+        "x-api-key": api_key.strip(),
+        "anthropic-version": _ANTHROPIC_VERSION,
+        "content-type": "application/json",
+    }
     payload = {
-        "contents": _to_gemini_messages(messages),
-        "systemInstruction": {
-            "parts": [{"text": system}]
-        },
-        "generationConfig": {
-            "maxOutputTokens": _MAX_LLM_TOKENS,
-            "temperature":     0.7,
-        },
+        "model": _CLAUDE_MODEL,
+        "max_tokens": _MAX_LLM_TOKENS,
+        "system": system,
+        "messages": messages,
+        "stream": True,
     }
 
-    if not payload["contents"]:
+    if not messages:
         yield "\n\n⚠️ **No messages to send.** Please type your question and try again."
         return
 
     try:
         with requests.post(
-            url, params=params, json=payload,
+            _CLAUDE_API_URL, headers=headers, json=payload,
             stream=True, timeout=45
         ) as resp:
             if resp.status_code == 400:
@@ -1498,11 +1571,11 @@ def _call_gemini_stream(messages: list[dict], system: str, api_key: str):
                 except: err = resp.text[:300]
                 yield f"\n\n⚠️ **Bad request (400):** {err}"
                 return
-            if resp.status_code in (401, 403):
-                yield "\n\n⚠️ **Invalid API key.** Get yours free at aistudio.google.com → Get API Key."
+            if resp.status_code == 401:
+                yield "\n\n⚠️ **Invalid API key.** Get yours at console.anthropic.com → API Keys."
                 return
             if resp.status_code == 429:
-                yield "\n\n⚠️ **Rate limit hit.** Free tier allows 15 req/min — wait a moment and retry."
+                yield "\n\n⚠️ **Rate limit hit.** Please wait a moment and retry."
                 return
             if not resp.ok:
                 try:   err = resp.json().get("error", {}).get("message", resp.text[:300])
@@ -1517,22 +1590,31 @@ def _call_gemini_stream(messages: list[dict], system: str, api_key: str):
                 if not line.startswith("data: "):
                     continue
                 data_str = line[6:].strip()
-                if data_str in ("[DONE]", ""):
-                    break
+                if not data_str:
+                    continue
                 try:
                     chunk = json.loads(data_str)
-                    for candidate in chunk.get("candidates", []):
-                        for part in candidate.get("content", {}).get("parts", []):
-                            text = part.get("text", "")
-                            if text:
-                                yield text
                 except json.JSONDecodeError:
                     continue
+
+                chunk_type = chunk.get("type")
+                if chunk_type == "content_block_delta":
+                    delta = chunk.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        text = delta.get("text", "")
+                        if text:
+                            yield text
+                elif chunk_type == "error":
+                    err_msg = chunk.get("error", {}).get("message", "Unknown error")
+                    yield f"\n\n⚠️ **Claude API error:** {err_msg}"
+                    return
+                elif chunk_type == "message_stop":
+                    break
 
     except requests.exceptions.Timeout:
         yield "\n\n⚠️ **Request timed out.** Try again in a moment."
     except requests.exceptions.ConnectionError:
-        yield "\n\n⚠️ **Connection error.** Check network access to generativelanguage.googleapis.com."
+        yield "\n\n⚠️ **Connection error.** Check network access to api.anthropic.com."
     except Exception as exc:
         yield f"\n\n⚠️ **Unexpected error:** {exc}"
 
@@ -1572,21 +1654,39 @@ with st.sidebar:
     <div style="text-align:center;padding:12px 0 20px">
       <div style="width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#06b6d4);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">N</div>
       <div style="font-size:13px;font-weight:600;background:linear-gradient(90deg,#a5b4fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Nova-MS</div>
-      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v4.0</div>
+      <div style="font-size:10px;color:#4a5a7a;margin-top:2px">Sales Dashboard v5.0</div>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown("#### 📂 Data Source")
-    uploaded = st.file_uploader("Upload your CSV", type=["csv"], help="Replace the default dataset")
+
+    # Accepts both CSV and Excel (.xlsx) exports — works with Zepto,
+    # Blinkit, Swiggy Instamart, or any similarly-structured export.
+    uploaded = st.file_uploader(
+        "Upload your CSV or Excel file",
+        type=["csv", "xlsx"],
+        help="Replace the default dataset. Accepts .csv or .xlsx exports "
+             "from Zepto, Blinkit, Swiggy Instamart, or similar platforms.",
+    )
     st.markdown("---")
 
+    # Always start from the default/sample dataset so the dashboard never
+    # renders empty, even if the upload fails validation.
     df_raw = load_default()
-    if uploaded:
+
+    if uploaded is not None:
         try:
-            df_raw = clean(pd.read_csv(uploaded))
-            st.success(f"✅ Loaded {len(df_raw):,} rows")
-        except Exception as e:
+            df_raw = load_user_file(uploaded)
+            file_kind = "Excel" if uploaded.name.lower().endswith(".xlsx") else "CSV"
+            st.success(f"✅ Loaded {len(df_raw):,} rows from **{uploaded.name}** ({file_kind})")
+        except ValueError as e:
+            # Expected, user-facing problems: bad type, missing columns, empty file
             st.error(f"❌ {e}")
+            st.info("↩️ Falling back to the default sample dataset until a valid file is uploaded.")
+        except Exception as e:
+            # Anything unexpected — still fail gracefully rather than crashing the app
+            st.error(f"❌ Unexpected error while loading **{uploaded.name}**: {e}")
+            st.info("↩️ Falling back to the default sample dataset.")
 
     st.markdown("#### 🔍 Filters")
     cities     = ["All"] + sorted(df_raw["City"].unique())
@@ -1609,23 +1709,23 @@ with st.sidebar:
 
     # ── Phase 4: AI Mode ─────────────────────────────────────────────────────────
     st.markdown("#### 🤖 BlinkBot AI Mode")
-    use_ai_mode = st.toggle("Enable LLM Mode", value=False, help="Use Google Gemini (free) for natural-language answers")
+    use_ai_mode = st.toggle("Enable LLM Mode", value=False, help="Use Claude (Anthropic) for natural-language answers")
 
     if use_ai_mode:
-        secret_key = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
+        secret_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
         if secret_key:
             api_key = secret_key.strip().strip('"').strip("'")
             st.markdown("""
             <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
                         border-radius:8px;padding:8px 10px;font-size:10px;color:#34d399">
-              ✅ Gemini key loaded from secrets
+              ✅ Claude key loaded from secrets
             </div>""", unsafe_allow_html=True)
         else:
             _raw_key = st.text_input(
-                "Google Gemini API Key",
+                "Anthropic (Claude) API Key",
                 type="password",
-                placeholder="AIzaSy... or aq...",
-                help="Free at aistudio.google.com → Get API Key — no credit card needed",
+                placeholder="sk-ant-api03-...",
+                help="Get a key at console.anthropic.com → API Keys",
             )
             api_key = _raw_key.strip().strip('"').strip("'").strip() if _raw_key else ""
 
@@ -1640,14 +1740,14 @@ with st.sidebar:
                 st.markdown("""
                 <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#34d399">
-                  ✅ Gemini key set — LLM mode active
+                  ✅ Claude key set — LLM mode active
                 </div>""", unsafe_allow_html=True)
             elif _is_placeholder:
                 st.markdown("""
                 <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#f87171">
                   ❌ Key looks invalid.<br><br>
-                  Go to <strong>aistudio.google.com</strong> → Get API Key.<br>
+                  Go to <strong>console.anthropic.com</strong> → API Keys.<br>
                   Paste your key directly — no quotes, no spaces.
                 </div>""", unsafe_allow_html=True)
                 api_key = ""
@@ -1655,14 +1755,14 @@ with st.sidebar:
                 st.markdown("""
                 <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);
                             border-radius:8px;padding:8px 10px;font-size:10px;color:#f59e0b">
-                  ⚠️ Paste your Gemini API key above.<br>
-                  100% free · No credit card · 15 req/min
+                  ⚠️ Paste your Anthropic API key above.<br>
+                  Get one at console.anthropic.com
                 </div>""", unsafe_allow_html=True)
                 api_key = ""
         st.markdown(f"""
         <div style="font-size:9px;color:#4a5a7a;margin-top:6px">
-          Model: <span style="color:#a5b4fc;font-family:monospace">{_GEMINI_MODEL}</span><br>
-          Free tier · 15 req/min · History: last {_LLM_HISTORY_LIMIT} turns
+          Model: <span style="color:#a5b4fc;font-family:monospace">{_CLAUDE_MODEL}</span><br>
+          Claude AI Analyst · History: last {_LLM_HISTORY_LIMIT} turns
         </div>""", unsafe_allow_html=True)
     else:
         api_key = ""
@@ -2326,7 +2426,7 @@ _ui_mem = _get_memory()
 # ── Mode badge ───────────────────────────────────────────────────────────────────
 mode_badge = (
     '<span style="background:rgba(16,185,129,.2);border:1px solid rgba(16,185,129,.4);'
-    'border-radius:20px;padding:3px 10px;font-size:10px;color:#34d399;margin-left:8px">✨ Gemini Free</span>'
+    'border-radius:20px;padding:3px 10px;font-size:10px;color:#34d399;margin-left:8px">✨ Claude AI Analyst</span>'
     if (use_ai_mode and api_key) else
     '<span style="background:rgba(99,130,255,.08);border:1px solid rgba(99,130,255,.15);'
     'border-radius:20px;padding:3px 10px;font-size:10px;color:#4a5a7a;margin-left:8px">🔧 Rule-based</span>'
@@ -2383,19 +2483,19 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ── Session state initialisation ──────────────────────────────────────────────────
 if "blinkbot_history" not in st.session_state:
     welcome = (
-        f"👋 **Hi! I'm BlinkBot** — now powered by **Google Gemini** (free ✨).\n\n"
+        f"👋 **Hi! I'm BlinkBot** — now powered by **Claude** (Anthropic ✨).\n\n"
         f"I've analyzed **{len(df):,} records** and I have full conversational memory. "
         f"Ask me anything in plain English — I'll answer with data, a chart, and a recommendation.\n\n"
         f"Try: *'Give me a full summary'* · *'Which city should we focus on?'* · *'Why is Grocery underperforming?'*"
         if (use_ai_mode and api_key) else
         f"👋 **Hi! I'm BlinkBot** — your AI Business Analyst with memory.\n\n"
         f"I've analyzed **{len(df):,} records**. Every answer comes with an inline chart.\n\n"
-        f"💡 *Enable **LLM Mode** → paste your free **Gemini key** from aistudio.google.com*\n\n"
+        f"💡 *Enable **LLM Mode** → paste your **Claude API key** from console.anthropic.com*\n\n"
         f"Try: *'Give me a summary'* · *'Which city is worst?'* · *'Best product?'*"
     )
     st.session_state.blinkbot_history  = [{"role":"bot","msg":welcome,"fig_json":None}]
 
-# LLM message history — Anthropic-style internally, converted to Gemini format at call time
+# LLM message history — already in Claude's native {"role": "user"/"assistant", "content": str} format
 if "bb_messages_llm" not in st.session_state:
     st.session_state.bb_messages_llm = []
 
@@ -2479,7 +2579,7 @@ if question_to_answer:
         full_response      = ""
         error_occurred     = False
 
-        for chunk in _call_gemini_stream(clean_messages, system_prompt, api_key):
+        for chunk in _call_claude_stream(clean_messages, system_prompt, api_key):
             full_response += chunk
             if "⚠️" in chunk:
                 error_occurred = True
