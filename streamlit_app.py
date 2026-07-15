@@ -1,5 +1,5 @@
 """
-Zepto Sales Intelligence Dashboard — Streamlit Edition
+Ayush Intelligence Hub Dashboard — Streamlit Edition
 Phase 4: Anthropic LLM streaming · natural-language BlinkBot · chart detection
 Phase 5: CSV + Excel (.xlsx) upload support with validation
 Developed by Ayush Mishra
